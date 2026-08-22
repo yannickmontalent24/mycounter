@@ -4,6 +4,7 @@
 **Companion to:** `calorietrackerbrief.md` v1.1 §7 (import/export) and the app itself at
 `github.com/yannickmontalent24/mycounter`
 **Target consumer of the output:** the Foods tab → "Paste from Claude" field
+**Matches app behaviour as of:** the import-review release (`prepareImport` / `commitImport`)
 
 ---
 
@@ -11,18 +12,26 @@
 
 The tracker app deliberately has no barcode scanner, no food database, and no LLM calls of its
 own (main brief §3). New foods and recipes enter the app exactly one way: the user has a
-conversation with Claude, Claude emits a JSON array, and the user taps once to paste it into
-the app's import field.
+conversation with Claude, Claude emits a JSON array, and the user pastes it into the app's
+import field.
 
 This skill's job is to make that emitted JSON **correct on the first paste, every time.**
 
-That is a higher bar than "well-formatted JSON". The app's importer is deliberately strict — it
-rejects the entire paste on any single invalid object rather than partially importing (main
-brief §7, implemented in `importFromClipboardText`). A malformed paste is not a soft failure;
-it is a rejected paste and a retyped conversation, at a kitchen counter, on a phone.
+That is a higher bar than "well-formatted JSON". The importer works in two stages, and they
+fail very differently:
 
-**Success criterion:** the user pastes, taps Import, and sees a success toast. Zero edits, zero
-retries.
+- **Validation is all-or-nothing.** A single malformed object — a missing `source`, a quoted
+  number, a recipe pointing at a food that doesn't exist — rejects the *entire* paste and writes
+  nothing. This is deliberate: a bad object must never reach the database.
+- **ID collisions are not fatal.** Items whose `id` already exists are shown in a review step
+  where the user chooses Skip or Replace per item. Everything else still imports.
+
+So a collision costs the user a couple of taps. A validation error costs them a round trip back
+to the conversation, at a kitchen counter, on a phone. **Optimise hard against validation
+errors; treat collisions as merely untidy.**
+
+**Success criterion:** the user pastes, taps Review, sees everything marked `new`, taps Import.
+Zero edits, zero retries.
 
 ---
 
@@ -40,6 +49,11 @@ Trigger when the user is trying to get food or recipe data *into the app*. Typic
 Do **not** trigger for: reviewing an exported day, weekly progress analysis, or target-setting.
 Those are separate conversations (see §12).
 
+Note that the app now has its own **quick-add** on the Log screen — five fields, inline, without
+leaving the logging flow. For a single simple food the user already has the numbers for, that is
+faster than a conversation. This skill earns its place on **bulk additions, label transcription,
+recipes, and anything needing macros worked out** — not on "add one food I already know."
+
 ---
 
 ## 3. The output contract
@@ -49,15 +63,19 @@ comments, ellipses, or trailing commentary inside the block.
 
 Rationale: the user copies with one tap. Anything inside the fence that isn't JSON — a `//`
 comment, a "..." placeholder, an explanatory line — makes `JSON.parse` fail and the whole paste
-is rejected with "Not valid JSON."
+is rejected.
 
-- Top level **must be an array**, even for a single item. A bare object is rejected with
-  "Expected a JSON array of food/recipe objects."
+- Top level **must be an array**, even for a single item. A bare object is rejected.
+- An empty array is rejected too — don't emit `[]` as a "nothing to add" signal; say it in prose.
 - Foods and recipes may be mixed freely in the same array. The importer writes all foods before
   all recipes regardless of array order, so a recipe may safely appear before the foods it
   references *within the same paste*.
 - Explanation, caveats, and the reasoning behind estimates belong **outside** the fence, above
   or below it. Keep it brief — this is read on a phone.
+
+The user will see a review screen listing each item as `new` or already-in-library before
+anything is written, so it is worth naming in prose what you have emitted ("three foods and one
+recipe") — it gives them something to check the screen against.
 
 ---
 
@@ -81,7 +99,7 @@ array, it is a recipe; otherwise it is a food.** There is no `type` field.
 
 | Field | Required | Notes |
 |---|---|---|
-| `id` | **yes** | Non-empty string. Kebab-case slug. Must not collide — see §7. |
+| `id` | **yes** | Non-empty string. Kebab-case slug. See §7. |
 | `name` | **yes** | Non-empty string. Shown in lists; keep under ~40 chars or it truncates with an ellipsis. |
 | `per100g.kcal` | **yes** | Number, per 100 grams. |
 | `per100g.protein` | **yes** | Number, per 100 grams. Decimals fine (`10.3`). |
@@ -107,14 +125,20 @@ array, it is a recipe; otherwise it is a food.** There is no `type` field.
 
 | Field | Required | Notes |
 |---|---|---|
-| `id` | **yes** | Non-empty string, kebab-case, must not collide. |
+| `id` | **yes** | Non-empty string, kebab-case. See §7. |
 | `name` | **yes** | Non-empty string. |
-| `ingredients` | **yes** | Non-empty array. Each entry needs `foodId` (non-empty string) and `grams` (number > 0). **Grams are RAW weights** — see §6. |
+| `ingredients` | **yes** | Non-empty array. Each entry needs `foodId` (non-empty string) and `grams` (number > 0). **Grams are RAW weights** — see §6. Every `foodId` must resolve — see §10. |
 | `cookedWeightG` | **yes** | Number > 0. The weight of the finished batch, weighed after cooking. See §6. |
 | `portions` | **yes** | Number > 0. |
 
 A recipe has no `source` field and no macros of its own — the app derives them from the
 ingredients.
+
+**On drafts:** the app itself lets a user save a recipe *without* a cooked weight, as a draft, to
+be filled in when the batch is weighed. **The importer does not accept drafts.** An imported
+recipe must always carry a real `cookedWeightG`. If the user hasn't weighed the batch yet, the
+right answer is to tell them to start the recipe in the app as a draft — not to emit a recipe
+with a guessed weight (see §6).
 
 ---
 
@@ -164,29 +188,63 @@ Therefore:
   either error silently corrupts every portion the user logs from that recipe, in a way that
   looks completely normal on screen.
 
-If the user can't or won't weigh the batch, the correct move is to **not emit a recipe** and
-instead emit the component foods, so they can log ingredients individually. Say why.
+If the batch hasn't been weighed yet, the correct move is **not** to emit a recipe. Either:
+
+- tell the user to build it in the app as a draft and fill in the weight when they weigh it, or
+- emit only the component foods, so they can log ingredients individually.
+
+Say which, and why.
 
 ---
 
-## 7. IDs and collisions
+## 7. IDs, collisions, and updating existing items
 
-The importer **hard-rejects** the entire paste if any `id` already exists in the app:
+Use stable, descriptive kebab-case slugs derived from the name: `greek-yoghurt-0`,
+`tias-granola-gold`, `batch-a-chicken-rice`. IDs are permanent in practice — the user has no
+rename UI, only delete-and-re-add. Choose as if it's forever.
 
-> `Item 0: food id "chicken-breast-raw" already exists. Rename it or remove the existing one first.`
+### Avoiding collisions
 
-There is no overwrite or merge path. So:
+A collision no longer breaks the paste, but it still costs taps and invites the wrong choice at
+the review screen. To avoid them:
 
-- Use stable, descriptive kebab-case slugs derived from the name: `greek-yoghurt-0`,
-  `tias-granola-gold`, `batch-a-chicken-rice`.
-- **Before emitting, ask what's already in the library** — unless the user has already told you
-  in this conversation. The app has an "Export all data (JSON)" button in Settings → Data that
-  copies the entire dataset; asking the user to paste that is the reliable way to know. For a
-  one-off addition, asking "is there already a chicken breast entry?" is enough.
-- If a collision is likely and you can't confirm, prefer a more specific id
-  (`chicken-breast-raw-tesco`) over a generic one, and mention it.
-- Ids are permanent in practice — the user has no rename UI, only delete-and-re-add. Choose as
-  if it's forever.
+**Ask the user to tap "Copy my food list for Claude"** (Foods tab) and paste the result at the
+start of the conversation. It produces a compact `id — name` listing of every food and recipe
+they already have — small enough to paste without thought, unlike the full data export. Once you
+have it, you can pick non-colliding ids with certainty.
+
+If you don't have that listing and a collision seems likely, prefer a more specific id
+(`chicken-breast-raw-tesco` over `chicken-breast-raw`) and mention why.
+
+### Reusing an id on purpose
+
+Reusing an existing id is a legitimate move when the user wants to **correct** stored data — the
+label numbers were wrong, a typo, a bad estimate now replaced by a real label. Emit it with the
+same id and tell the user to choose **Replace** at the review screen.
+
+**But understand what Replace does.** Log entries store only a reference and a gram weight;
+macros are computed live. So replacing an item **also changes every meal already logged from
+it** — the totals on past days shift retroactively, silently.
+
+That gives a clean rule:
+
+| Situation | Right move |
+|---|---|
+| The stored numbers were **wrong** | Same id → Replace. Rewriting history is correct: the old figures were never right. |
+| The thing itself **changed** (reformulated product, different batch, new supplier) | **New id.** The old entries recorded what was actually eaten at the time. |
+
+### Repeat batches — do not reuse a recipe id
+
+The user batch-cooks on Sundays (main brief §2). Next week's Batch A has different weights, so
+it is a **different batch**, not an edit of last week's. Reusing the recipe id and choosing
+Replace would silently rewrite what last week's meals say they ate.
+
+- If the user asks for "Batch A again, but with 650 g chicken", emit it under a **new id**
+  (`batch-a-2026-09-14` or similar) — or better, tell them the app has a **"Cook this again"**
+  button on each recipe that copies it for a fresh batch without touching history. That is
+  usually faster than a conversation.
+- Never emit a recipe with an existing id unless the user has explicitly said the stored recipe
+  was *wrong*.
 
 ---
 
@@ -225,27 +283,34 @@ food `estimate` and say what's uncertain — never quietly produce a plausible-l
 
 ---
 
-## 10. Traps — silent failures to design against
+## 10. Failure modes to design against
 
-These are the failure modes that don't produce an error message, which makes them the dangerous
-ones:
+**Hard rejections** — these bin the whole paste, so never emit them:
 
-1. **A recipe referencing a `foodId` that doesn't exist.** The importer does *not* validate that
-   ingredient foods exist. It will accept the recipe. The recipe then shows "—" instead of
-   per-portion macros, and — worse — any log entry made from it **silently disappears from the
-   Today list**, because the app can't resolve its macros. **Rule: every `foodId` in a recipe
-   must either already be in the user's library or be included in the same paste.**
-2. **`cookedWeightG` guessed rather than weighed.** See §6. Produces confidently wrong numbers
-   forever.
-3. **`source` upgraded for confidence.** Marking an estimate as `label` destroys the one signal
-   the user has for judging their own data.
-4. **Strings where numbers belong.** `"kcal": "106"` passes `JSON.parse` but fails validation
-   (`typeof !== 'number'`). Emit bare numbers, never quoted.
-5. **Per-portion figures in `per100g`.** The app has no per-piece or per-serving concept. A food
+1. **A recipe referencing a `foodId` that doesn't exist.** The importer checks that every
+   ingredient resolves either to a food already in the library or to one included in the same
+   paste, and rejects with the missing ids named. **Rule: always include the foods a recipe
+   needs in the same array**, unless you have confirmed from the library listing (§7) that they
+   are already there. (This check exists because such a recipe used to import cleanly and then
+   break invisibly — portions logged from it vanished from the day's list with no error.)
+2. **Strings where numbers belong.** `"kcal": "106"` parses as JSON but fails validation. Emit
+   bare numbers, never quoted.
+3. **A missing or invalid `source`** on any food (§5).
+4. **A recipe without `cookedWeightG`** — the app's draft state is not available via import (§4).
+5. **Anything that isn't a JSON array** — including a bare object, an empty array, or prose that
+   slipped inside the fence (§3).
+
+**Silent damage** — no error, wrong data:
+
+6. **`cookedWeightG` guessed rather than weighed.** See §6. Confidently wrong, forever.
+7. **`source` upgraded for confidence.** Destroys the one signal the user has for judging their
+   own data.
+8. **Reusing an id to record a change rather than a correction.** Rewrites past meals (§7).
+9. **Per-portion figures in `per100g`.** The app has no per-piece or per-serving concept. A food
    sold by the unit (one egg, one bar) must still be expressed per 100 g, with
    `defaultPortionG` set to the weight of one unit.
-6. **Volume units.** The app is grams-only; there is no ml. For liquids, either convert using
-   density or treat per-100 ml as per-100 g — and say which you did in the prose.
+10. **Volume units.** The app is grams-only; there is no ml. For liquids, either convert using
+    density or treat per-100 ml as per-100 g — and say which you did in the prose.
 
 ---
 
@@ -257,10 +322,13 @@ Before emitting, the skill should have:
    exists.
 2. **For recipes: the raw ingredient weights AND the weighed cooked batch weight AND the portion
    count.** All three. No emitting a recipe with any of them assumed.
-3. **Enough confidence on id collisions** (§7).
+3. **Every ingredient food accounted for** — in the library already, or included in the same
+   array (§10.1).
+4. **The library listing, if collisions are plausible** — or an explicit decision to proceed
+   without it (§7).
 
-Then emit: a short line of prose (what this is, and any estimate caveats), then one fenced JSON
-block, then nothing else.
+Then emit: a short line of prose (what this is, how many items, and any estimate caveats), then
+one fenced JSON block, then nothing else.
 
 Keep the conversation short. Every exchange is friction, and the whole import/export design
 exists because friction is what kills daily logging by week three (main brief §12).
@@ -275,9 +343,8 @@ exists because friction is what kills daily logging by week three (main brief §
 - **Setting calorie/protein targets.** Those are user-entered in Settings and depend on a TDEE
   figure that is still undetermined (main brief §11).
 - **Weight-log entries, day targets, date overrides.** The import field accepts foods and recipes
-  only; other object types are silently misclassified as foods and rejected on validation.
-- **Editing or deleting existing entries.** Import is additive only, and collides rather than
-  overwrites.
+  only; other object types are treated as foods and rejected on validation.
+- **Deleting anything.** Import only adds or replaces.
 
 ---
 
@@ -285,7 +352,7 @@ exists because friction is what kills daily logging by week three (main brief §
 
 **A. Two foods from a label**
 
-> Both from the packaging you photographed, so marked `label`.
+> Both from the packaging you photographed, so marked `label`. Two new foods.
 
 ```json
 [
@@ -310,7 +377,8 @@ exists because friction is what kills daily logging by week three (main brief §
 
 **B. A recipe plus the foods it needs, in one paste**
 
-> Chicken and rice figures are published reference values. Batch weighed at 1900 g cooked.
+> Chicken and rice figures are published reference values. Batch weighed at 1900 g cooked. Two
+> foods and one recipe.
 
 ```json
 [
@@ -361,17 +429,37 @@ exists because friction is what kills daily logging by week three (main brief §
 ]
 ```
 
+**D. Correcting a food that's already stored**
+
+> Same id as the existing entry, so this is an update rather than a new food — choose
+> **Replace** at the review screen. Note that your previously logged granola portions will
+> recalculate with these corrected numbers, which is what you want here since the old figures
+> were wrong.
+
+```json
+[
+  {
+    "id": "tias-granola-gold",
+    "name": "Tia's Granola — No Sugar Added",
+    "per100g": { "kcal": 478, "protein": 21.5, "carbs": null, "fat": null, "fibre": 10 },
+    "defaultPortionG": 50,
+    "source": "label",
+    "tags": ["breakfast", "carbs"]
+  }
+]
+```
+
 ---
 
 ## 14. Open questions for the skill author
 
-Decide these when building the skill; none are settled by the app or the briefs:
-
-1. **Should the skill proactively ask for the full "Export all data (JSON)" dump at the start of
-   a session** to eliminate id collisions, or only ask when a collision seems likely? The former
-   is more reliable, the latter is less friction.
+1. **How aggressively to request the library listing.** Asking for "Copy my food list for
+   Claude" every session is reliable but adds an exchange; asking only when a collision looks
+   likely is lighter but occasionally wrong. Consider asking once per conversation, only when
+   the user is adding more than one or two items.
 2. **How much estimate rationale to show.** Enough to judge trustworthiness, not so much it
    becomes an essay on a phone screen. Suggest capping at one or two lines.
-3. **Whether to offer a "replacement" flow** — since the importer can't overwrite, replacing an
-   existing food means the user deletes it in the app first, then pastes. Worth a scripted
-   instruction, or worth leaving alone?
+3. **Whether to volunteer the in-app alternatives.** Quick-add (single known food) and "Cook
+   this again" (repeat batch) are both faster than a conversation. A skill that occasionally
+   says "you can do this faster in the app" is more useful than one that always produces JSON —
+   but it shouldn't nag.
