@@ -67,42 +67,86 @@ export async function exportRange(fromDate, toDate) {
 
 export class ImportError extends Error {}
 
-// Paste-from-Claude import: a JSON array of food and/or recipe objects.
-// Rejects (with a clear error, not a silent partial import) on any invalid object or ID collision.
-export async function importFromClipboardText(text) {
+// Paste-from-Claude import, step 1 of 2: parse and validate, and report which items collide
+// with something already stored. A genuinely malformed object still hard-rejects the whole
+// paste (a bad object must never reach the database), but an ID collision is no longer fatal —
+// it becomes a per-item choice in the UI, since Claude has no reliable way to know what the
+// library already contains.
+export async function prepareImport(text) {
   const { validateFood, validateRecipe } = await import('./logic.js');
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new ImportError('Not valid JSON.');
+    throw new ImportError('That doesn’t look like JSON. Copy the whole block, including the square brackets.');
   }
-  if (!Array.isArray(parsed)) throw new ImportError('Expected a JSON array of food/recipe objects.');
+  if (!Array.isArray(parsed)) throw new ImportError('Expected a JSON array — the pasted text should start with [ and end with ].');
+  if (parsed.length === 0) throw new ImportError('That list is empty — nothing to import.');
 
   const [existingFoods, existingRecipes] = await Promise.all([getAll('foods'), getAll('recipes')]);
   const existingFoodIds = new Set(existingFoods.map(f => f.id));
   const existingRecipeIds = new Set(existingRecipes.map(r => r.id));
 
-  const foodsToAdd = [];
-  const recipesToAdd = [];
+  // Foods arriving in this same paste count as available to recipes in it.
+  const incomingFoodIds = new Set(parsed.filter(o => !Array.isArray(o.ingredients)).map(o => o.id));
 
-  parsed.forEach((obj, i) => {
+  const items = parsed.map((obj, i) => {
     const isRecipe = Array.isArray(obj.ingredients);
+    const label = isRecipe ? 'recipe' : 'food';
+    const errors = isRecipe ? validateRecipe(obj) : validateFood(obj);
+    if (errors.length) throw new ImportError(`Item ${i + 1} (${label}): ${errors.join('; ')}`);
+
+    // A recipe pointing at a food that doesn't exist imports "successfully" and then silently
+    // breaks: its macros can't be resolved, so portions logged from it vanish from Today.
+    // Catch it here rather than letting it become an invisible data problem.
     if (isRecipe) {
-      const errors = validateRecipe(obj);
-      if (errors.length) throw new ImportError(`Item ${i} (recipe): ${errors.join('; ')}`);
-      if (existingRecipeIds.has(obj.id)) throw new ImportError(`Item ${i}: recipe id "${obj.id}" already exists. Rename it or remove the existing one first.`);
-      recipesToAdd.push(obj);
-    } else {
-      const errors = validateFood(obj);
-      if (errors.length) throw new ImportError(`Item ${i} (food): ${errors.join('; ')}`);
-      if (existingFoodIds.has(obj.id)) throw new ImportError(`Item ${i}: food id "${obj.id}" already exists. Rename it or remove the existing one first.`);
-      foodsToAdd.push(obj);
+      const missing = obj.ingredients
+        .map(ing => ing.foodId)
+        .filter(id => !existingFoodIds.has(id) && !incomingFoodIds.has(id));
+      if (missing.length) {
+        throw new ImportError(
+          `Item ${i + 1} (recipe "${obj.name}") uses ${missing.length === 1 ? 'a food' : 'foods'} that isn’t in your library: ` +
+          `${missing.join(', ')}. Ask Claude to include ${missing.length === 1 ? 'it' : 'them'} in the same paste.`
+        );
+      }
     }
+
+    const conflict = isRecipe ? existingRecipeIds.has(obj.id) : existingFoodIds.has(obj.id);
+    return { kind: isRecipe ? 'recipe' : 'food', obj, conflict, action: conflict ? 'skip' : 'add' };
   });
 
-  for (const f of foodsToAdd) await put('foods', f);
-  for (const r of recipesToAdd) await put('recipes', r);
+  return {
+    items,
+    newCount: items.filter(it => !it.conflict).length,
+    conflictCount: items.filter(it => it.conflict).length,
+  };
+}
 
-  return { foods: foodsToAdd.length, recipes: recipesToAdd.length };
+// Step 2 of 2: write the items the user accepted. `action` is 'add' | 'replace' | 'skip'.
+export async function commitImport(items) {
+  let added = 0, replaced = 0, skipped = 0;
+  for (const item of items) {
+    if (item.action === 'skip') { skipped++; continue; }
+    await put(item.kind === 'recipe' ? 'recipes' : 'foods', item.obj);
+    if (item.action === 'replace') replaced++; else added++;
+  }
+  return { added, replaced, skipped };
+}
+
+// Compact library listing to paste into Claude at the start of a conversation, so it knows
+// what already exists and stops proposing colliding ids.
+export async function exportLibraryForClaude() {
+  const [foods, recipes] = await Promise.all([getAll('foods'), getAll('recipes')]);
+  const lines = ['Foods already in my tracker (id — name):'];
+  if (foods.length === 0) lines.push('(none yet)');
+  for (const f of foods.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+    lines.push(`${f.id} — ${f.name}`);
+  }
+  lines.push('', 'Recipes already in my tracker (id — name):');
+  if (recipes.length === 0) lines.push('(none yet)');
+  for (const r of recipes.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+    lines.push(`${r.id} — ${r.name}`);
+  }
+  lines.push('', 'Please don’t reuse any of these ids for new items.');
+  return lines.join('\n');
 }

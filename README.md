@@ -65,6 +65,41 @@ Everything else (weekday targets, date overrides for the Sept maintenance block,
 of the food list, recipes) is entered by hand or via "Paste from Claude" once you know the
 real numbers.
 
+## Adding foods and recipes
+
+Three ways in, in rough order of how often you'll use them:
+
+- **Quick add from the Log screen.** Search for something that isn't in your library and a
+  `+ Add "…" as a new food` row appears in the results. Five fields, then it selects the new
+  food and drops you straight back into logging it — no trip to the Foods tab.
+- **Paste from Claude.** Foods tab → "Paste from Claude". "Paste from clipboard" reads it
+  directly, or paste into the box. You then get a **review step** listing every item as either
+  `new` or already-in-your-library, with Skip/Replace per clash — one duplicate no longer
+  rejects the whole paste. "Copy my food list for Claude" copies a compact id/name list to paste
+  at the start of a Claude conversation so it stops proposing ids you already have.
+- **Add food / Build a recipe** on the Foods and Recipes tabs, for full control over every field.
+
+Near-duplicate names ("Chicken breast" vs "Chicken breast, raw") trigger a warning on save;
+tap Save twice to add anyway.
+
+### Recipes: drafts and re-cooking
+
+- **Drafts.** Leave the cooked batch weight empty to save a recipe while the food is still
+  cooking. It's marked `draft` and can't be logged from until you weigh the batch and fill it
+  in — the cooked-weight rule is never bypassed, only deferred.
+- **"Cook this again".** Because log entries reference a recipe by id, editing a recipe also
+  changes the macros of meals already logged from it. So a re-cooked batch with different
+  weights should be a *new* recipe, not an edit. "Cook this again" copies the ingredients and
+  portions into a fresh recipe (dated, cooked weight cleared, ready to re-weigh) and leaves past
+  weeks untouched. Editing a recipe that already has logged portions warns you and says how many.
+- **New food mid-recipe.** The "New food" button inside the recipe builder creates a food and
+  returns you to the half-built recipe with everything preserved and the new food added as an
+  ingredient row.
+
+The importer rejects a recipe whose ingredient `foodId` isn't already in the library or included
+in the same paste. Without that check such a recipe imports fine and then silently breaks:
+its macros can't be resolved, so portions logged from it vanish from the Today list.
+
 ## Accounts
 
 Two accounts, `yannick` and `manshini`, share the same password. Foods and recipes are one

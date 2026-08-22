@@ -107,7 +107,10 @@ export function validateFood(obj) {
   return errors;
 }
 
-export function validateRecipe(obj) {
+// `allowDraft` permits saving a recipe before its batch has been weighed — you enter raw
+// ingredients while the food is still cooking and fill in cookedWeightG later. A draft can
+// never be logged from (see isDraftRecipe), so the cooked-weight rule is still never bypassed.
+export function validateRecipe(obj, { allowDraft = false } = {}) {
   const errors = [];
   if (typeof obj.id !== 'string' || !obj.id) errors.push('recipe.id is required');
   if (typeof obj.name !== 'string' || !obj.name) errors.push('recipe.name is required');
@@ -116,9 +119,37 @@ export function validateRecipe(obj) {
     if (typeof ing.foodId !== 'string' || !ing.foodId) errors.push('recipe.ingredients[].foodId is required');
     if (typeof ing.grams !== 'number' || ing.grams <= 0) errors.push('recipe.ingredients[].grams must be a positive number');
   }
-  if (typeof obj.cookedWeightG !== 'number' || obj.cookedWeightG <= 0) errors.push('recipe.cookedWeightG must be a positive number');
+  const cookedMissing = obj.cookedWeightG == null;
+  if (!(allowDraft && cookedMissing)) {
+    if (typeof obj.cookedWeightG !== 'number' || obj.cookedWeightG <= 0) errors.push('recipe.cookedWeightG must be a positive number');
+  }
   if (typeof obj.portions !== 'number' || obj.portions <= 0) errors.push('recipe.portions must be a positive number');
   return errors;
+}
+
+export function isDraftRecipe(recipe) {
+  return recipe.cookedWeightG == null || !(recipe.cookedWeightG > 0);
+}
+
+// Loose name matching, to warn before the library fills up with "Chicken breast",
+// "Chicken breast, raw" and "chicken" as three separate foods.
+export function normalizeFoodName(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+export function findSimilarFoods(name, foods, { excludeId = null } = {}) {
+  const target = normalizeFoodName(name);
+  if (!target) return [];
+  return foods.filter(f => {
+    if (excludeId && f.id === excludeId) return false;
+    const candidate = normalizeFoodName(f.name);
+    if (!candidate) return false;
+    if (candidate === target) return true;
+    // Containment only counts for reasonably long strings, or "egg" matches "eggplant".
+    const shorter = candidate.length < target.length ? candidate : target;
+    if (shorter.length < 4) return false;
+    return candidate.includes(target) || target.includes(candidate);
+  });
 }
 
 export function formatDateHeader(dateStr) {

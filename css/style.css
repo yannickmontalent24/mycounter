@@ -510,6 +510,22 @@ a { color: var(--navy); }
 .source-badge .glyph { font-family: var(--font-mono); font-size: 0.6875rem; line-height: 1; }
 .source-badge .word { font-family: var(--font-mono); font-size: 0.625rem; letter-spacing: 0.8px; text-transform: uppercase; }
 
+.draft-tag {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: var(--amber-tint-bg);
+  border: 1px solid var(--amber-tint-border);
+  border-radius: 8px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.quick-add-row .name { color: var(--teal); font-weight: 600; }
+
 .legend {
   margin-top: 18px;
   font-family: var(--font-mono);

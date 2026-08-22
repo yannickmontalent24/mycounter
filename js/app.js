@@ -3,8 +3,11 @@ import { seedSharedIfEmpty, seedUserIfEmpty } from './seed.js';
 import {
   resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
   foodPortionMacros, recipePerGram, validateFood, validateRecipe, formatDateHeader,
+  isDraftRecipe, findSimilarFoods,
 } from './logic.js';
-import { exportDay, exportRange, importFromClipboardText, ImportError } from './import-export.js';
+import {
+  exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
+} from './import-export.js';
 import { attemptLogin, getSessionUser, logout, accountLabel } from './auth.js';
 
 const WEEKDAY_ROWS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -63,7 +66,7 @@ function toast(msg) {
 }
 
 // ---- In-memory cache, refreshed from IndexedDB after any mutation ----
-const cache = { foods: [], recipes: [], dayTargets: [], overrides: [], weightLog: [] };
+const cache = { foods: [], recipes: [], dayTargets: [], overrides: [], weightLog: [], foodFrequency: new Map() };
 
 async function refreshCache() {
   const [foods, recipes, dayTargets, overrides, weightLog] = await Promise.all([
@@ -74,6 +77,16 @@ async function refreshCache() {
   cache.dayTargets = dayTargets;
   cache.overrides = overrides;
   cache.weightLog = weightLog.sort((a, b) => b.date.localeCompare(a.date));
+
+  // How often each food has been logged recently, so the Log screen can lead with the foods
+  // actually eaten rather than whatever happens to sort first.
+  const recent = await db.entriesInRange(isoDaysAgo(60), todayISO());
+  const freq = new Map();
+  for (const e of recent) {
+    if (!e.foodId) continue;
+    freq.set(e.foodId, (freq.get(e.foodId) ?? 0) + 1);
+  }
+  cache.foodFrequency = freq;
 }
 
 function foodsById() { return new Map(cache.foods.map(f => [f.id, f])); }
@@ -211,7 +224,21 @@ function renderLog() {
 
 function renderLogResults() {
   const q = logState.query.trim().toLowerCase();
-  const results = cache.foods.filter(f => !q || f.name.toLowerCase().includes(q)).slice(0, 4);
+  const matches = cache.foods.filter(f => !q || f.name.toLowerCase().includes(q));
+
+  // With no search term, lead with what actually gets eaten most — usually this means logging
+  // needs no typing at all. Within a search, keep frequent foods first too.
+  const freq = cache.foodFrequency;
+  matches.sort((a, b) => {
+    const diff = (freq.get(b.id) ?? 0) - (freq.get(a.id) ?? 0);
+    return diff !== 0 ? diff : a.name.localeCompare(b.name);
+  });
+  const results = matches.slice(0, 4);
+
+  const hintEl = document.getElementById('log-results-hint');
+  const showHint = !q && results.length > 0 && [...freq.values()].some(v => v > 0);
+  hintEl.hidden = !showHint;
+
   const container = document.getElementById('log-search-results');
   container.innerHTML = '';
   for (const f of results) {
@@ -229,6 +256,91 @@ function renderLogResults() {
     });
     container.appendChild(btn);
   }
+
+  // Nothing matched: offer to create it right here, rather than sending the user off to the
+  // Foods tab and back mid-log. This is the moment most likely to end a logging habit.
+  if (q && results.length === 0) {
+    const raw = logState.query.trim();
+    const addBtn = el(`
+      <button type="button" class="search-result-btn quick-add-row">
+        <span class="name">+ Add “${escapeHtml(raw)}” as a new food</span>
+      </button>
+    `);
+    addBtn.addEventListener('click', () => openQuickAddFoodModal(raw));
+    container.appendChild(addBtn);
+  }
+}
+
+// Deliberately fewer fields than the full Add food form: name, the two numbers that matter,
+// portion, source. Everything else can be filled in later from the Foods tab.
+function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
+  const body = `
+    <h2>Quick add food</h2>
+    <label class="field-label" for="q-name">Name</label>
+    <input class="text-input" id="q-name" style="margin-bottom:12px;" value="${escapeHtml(prefillName)}">
+    <label class="field-label" for="q-kcal">Calories per 100 g</label>
+    <input class="text-input" id="q-kcal" type="number" inputmode="numeric" style="margin-bottom:12px;">
+    <label class="field-label" for="q-protein">Protein per 100 g</label>
+    <input class="text-input" id="q-protein" type="number" inputmode="decimal" style="margin-bottom:12px;">
+    <label class="field-label" for="q-portion">Usual portion (g)</label>
+    <input class="text-input" id="q-portion" type="number" inputmode="numeric" style="margin-bottom:12px;" value="100">
+    <label class="field-label" for="q-source">Source</label>
+    <select class="text-input" id="q-source" style="margin-bottom:12px;">
+      <option value="label">label — from packaging</option>
+      <option value="reference">reference — published table</option>
+      <option value="estimate">estimate — entered by hand</option>
+    </select>
+    <div class="form-msg error" id="q-error" hidden></div>
+    <div class="form-msg" id="q-warn" hidden style="color:var(--amber);"></div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="q-cancel">Cancel</button>
+      <button type="button" class="primary-btn" id="q-save">Save &amp; select</button>
+    </div>
+  `;
+  openModal(body);
+  document.getElementById('q-cancel').addEventListener('click', closeModal);
+
+  let duplicateAcknowledged = false;
+  document.getElementById('q-save').addEventListener('click', async () => {
+    const num = v => (v === '' ? null : Number(v));
+    const name = document.getElementById('q-name').value.trim();
+    const errEl = document.getElementById('q-error');
+    const warnEl = document.getElementById('q-warn');
+
+    const similar = findSimilarFoods(name, cache.foods);
+    if (similar.length && !duplicateAcknowledged) {
+      warnEl.innerHTML = `You already have <strong>${escapeHtml(similar[0].name)}</strong>. Tap Save again to add this anyway.`;
+      warnEl.hidden = false;
+      duplicateAcknowledged = true;
+      return;
+    }
+
+    const obj = {
+      id: slugify(name),
+      name,
+      per100g: {
+        kcal: num(document.getElementById('q-kcal').value),
+        protein: num(document.getElementById('q-protein').value),
+        carbs: null, fat: null, fibre: null,
+      },
+      defaultPortionG: num(document.getElementById('q-portion').value) ?? 100,
+      source: document.getElementById('q-source').value,
+      tags: [],
+    };
+    const errors = validateFood(obj);
+    if (errors.length) { errEl.textContent = errors.join(' '); errEl.hidden = false; return; }
+
+    await db.put('foods', obj);
+    await refreshCache();
+    closeModal();
+    if (onSaved) { onSaved(obj); return; }
+    // Straight back into the log flow with the new food already selected.
+    logState.query = '';
+    logState.pickedId = obj.id;
+    logState.grams = String(obj.defaultPortionG);
+    renderLog();
+    toast(`Added ${obj.name}`);
+  });
 }
 
 function renderLogDraft() {
@@ -365,6 +477,7 @@ function openFoodModal(food) {
     <label class="field-label" for="f-tags">Tags (comma separated)</label>
     <input class="text-input" id="f-tags" style="margin-bottom:12px;" value="${isEdit ? escapeHtml((food.tags ?? []).join(', ')) : ''}">
     <div class="form-msg error" id="f-error" hidden></div>
+    <div class="form-msg" id="f-warn" hidden style="color:var(--amber);"></div>
     <div class="modal-actions">
       <button type="button" class="secondary-btn" id="f-cancel">Cancel</button>
       <button type="button" class="primary-btn" id="f-save">Save</button>
@@ -372,11 +485,23 @@ function openFoodModal(food) {
   `;
   openModal(body);
   document.getElementById('f-cancel').addEventListener('click', closeModal);
+  let duplicateAcknowledged = false;
   document.getElementById('f-save').addEventListener('click', async () => {
     const num = v => (v === '' ? null : Number(v));
+    const enteredName = document.getElementById('f-name').value.trim();
+
+    const similar = findSimilarFoods(enteredName, cache.foods, { excludeId: isEdit ? food.id : null });
+    if (similar.length && !duplicateAcknowledged) {
+      const warnEl = document.getElementById('f-warn');
+      warnEl.innerHTML = `You already have <strong>${escapeHtml(similar[0].name)}</strong>. Tap Save again to add this anyway.`;
+      warnEl.hidden = false;
+      duplicateAcknowledged = true;
+      return;
+    }
+
     const obj = {
-      id: isEdit ? food.id : slugify(document.getElementById('f-name').value),
-      name: document.getElementById('f-name').value.trim(),
+      id: isEdit ? food.id : slugify(enteredName),
+      name: enteredName,
       per100g: {
         kcal: num(document.getElementById('f-kcal').value),
         protein: num(document.getElementById('f-protein').value),
@@ -406,35 +531,120 @@ function slugify(name) {
   return `${base}-${Date.now().toString(36)}`;
 }
 
+document.getElementById('copy-library-btn').addEventListener('click', async () => {
+  const text = await exportLibraryForClaude();
+  const ok = await copyText(text);
+  toast(ok ? 'Copied your food list' : 'Could not copy — check clipboard permission');
+});
+
 document.getElementById('paste-import-btn').addEventListener('click', () => {
   const body = `
     <h2>Paste from Claude</h2>
-    <p style="font-size:13px; color:var(--text-secondary); margin-top:0;">Paste a JSON array of food and/or recipe objects.</p>
+    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">Paste the JSON block Claude gave you.</p>
+    <button type="button" class="secondary-btn" id="import-clipboard" style="margin-bottom:10px;">Paste from clipboard</button>
     <textarea id="import-text" placeholder="[ { &quot;id&quot;: ... } ]"></textarea>
     <div class="form-msg error" id="import-msg" hidden></div>
     <div class="modal-actions">
       <button type="button" class="secondary-btn" id="import-cancel">Cancel</button>
-      <button type="button" class="primary-btn" id="import-confirm">Import</button>
+      <button type="button" class="primary-btn" id="import-review">Review</button>
     </div>
   `;
   openModal(body);
   document.getElementById('import-cancel').addEventListener('click', closeModal);
-  document.getElementById('import-confirm').addEventListener('click', async () => {
-    const text = document.getElementById('import-text').value;
+
+  document.getElementById('import-clipboard').addEventListener('click', async () => {
     const msgEl = document.getElementById('import-msg');
     try {
-      const result = await importFromClipboardText(text);
-      await refreshCache();
-      closeModal();
-      toast(`Imported ${result.foods} food(s), ${result.recipes} recipe(s)`);
-      renderFoods();
-      renderRecipes();
-    } catch (err) {
-      msgEl.textContent = err instanceof ImportError ? err.message : 'Import failed.';
+      const text = await navigator.clipboard.readText();
+      if (!text || !text.trim()) {
+        msgEl.textContent = 'Your clipboard looks empty.';
+        msgEl.hidden = false;
+        return;
+      }
+      document.getElementById('import-text').value = text;
+      msgEl.hidden = true;
+      reviewImport();
+    } catch {
+      // Safari can refuse without a fresh user gesture, or the permission can be denied.
+      msgEl.textContent = 'Couldn’t read the clipboard — paste into the box below instead.';
       msgEl.hidden = false;
     }
   });
+
+  document.getElementById('import-review').addEventListener('click', reviewImport);
 });
+
+async function reviewImport() {
+  const text = document.getElementById('import-text').value;
+  const msgEl = document.getElementById('import-msg');
+  try {
+    const plan = await prepareImport(text);
+    openImportPreview(plan);
+  } catch (err) {
+    msgEl.textContent = err instanceof ImportError ? err.message : 'Import failed.';
+    msgEl.hidden = false;
+  }
+}
+
+// A collision is no longer fatal to the whole paste — each clashing item becomes a choice.
+function openImportPreview(plan) {
+  const summary = plan.conflictCount === 0
+    ? `${plan.newCount} new item${plan.newCount === 1 ? '' : 's'} to add.`
+    : `${plan.newCount} new, ${plan.conflictCount} already in your library.`;
+
+  const rowsHtml = plan.items.map((it, i) => {
+    const macros = it.kind === 'food'
+      ? `${it.obj.per100g.kcal} kcal · ${it.obj.per100g.protein} g /100g`
+      : `${it.obj.ingredients.length} ingredient${it.obj.ingredients.length === 1 ? '' : 's'} · ${it.obj.portions} portions`;
+    const control = it.conflict
+      ? `<select class="text-input" data-import-action="${i}" style="width:auto; height:40px; padding:0 8px; font-size:0.8125rem;">
+           <option value="skip">Skip</option>
+           <option value="replace">Replace</option>
+         </select>`
+      : `<span class="source-badge" style="border:1px solid var(--teal-tint-border); background:var(--teal-badge-bg);">
+           <span class="word" style="color:var(--teal);">new</span>
+         </span>`;
+    return `
+      <div class="food-row">
+        <div class="main">
+          <div class="name">${escapeHtml(it.obj.name)}</div>
+          <div class="per100">${it.kind} · ${macros}</div>
+        </div>
+        ${control}
+      </div>
+    `;
+  }).join('');
+
+  openModal(`
+    <h2>Review import</h2>
+    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">${summary}</p>
+    <div class="entry-list">${rowsHtml}</div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="ip-cancel">Cancel</button>
+      <button type="button" class="primary-btn" id="ip-confirm">Import</button>
+    </div>
+  `);
+
+  document.querySelectorAll('[data-import-action]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      plan.items[Number(sel.dataset.importAction)].action = sel.value;
+    });
+  });
+
+  document.getElementById('ip-cancel').addEventListener('click', closeModal);
+  document.getElementById('ip-confirm').addEventListener('click', async () => {
+    const result = await commitImport(plan.items);
+    await refreshCache();
+    closeModal();
+    const parts = [];
+    if (result.added) parts.push(`${result.added} added`);
+    if (result.replaced) parts.push(`${result.replaced} replaced`);
+    if (result.skipped) parts.push(`${result.skipped} skipped`);
+    toast(parts.join(', ') || 'Nothing imported');
+    renderFoods();
+    renderRecipes();
+  });
+}
 
 // ==================== RECIPES ====================
 function renderRecipes() {
@@ -443,25 +653,37 @@ function renderRecipes() {
   if (cache.recipes.length === 0) list.appendChild(el(`<div class="empty-state">No recipes yet.</div>`));
   const fMap = foodsById();
   for (const r of cache.recipes) {
+    const draft = isDraftRecipe(r);
     let perPortionText = '—';
-    try {
-      const perGram = recipePerGram(r, fMap);
-      const grams = r.cookedWeightG / r.portions;
-      perPortionText = `${Math.round(perGram.kcal * grams)} kcal · ${Math.round(perGram.protein * grams)} g / portion`;
-    } catch { /* missing ingredient food record */ }
+    if (draft) {
+      perPortionText = 'Draft — needs the cooked batch weight';
+    } else {
+      try {
+        const perGram = recipePerGram(r, fMap);
+        const grams = r.cookedWeightG / r.portions;
+        perPortionText = `${Math.round(perGram.kcal * grams)} kcal · ${Math.round(perGram.protein * grams)} g / portion`;
+      } catch {
+        perPortionText = 'Missing an ingredient food';
+      }
+    }
     const row = el(`
       <div>
         <div class="food-row" style="align-items:flex-start;">
           <div class="main">
-            <div class="name">${escapeHtml(r.name)}</div>
-            <div class="per100">${perPortionText}</div>
+            <div class="name">${escapeHtml(r.name)}${draft ? ' <span class="draft-tag">draft</span>' : ''}</div>
+            <div class="per100">${escapeHtml(perPortionText)}</div>
           </div>
           <div class="actions">
             <button type="button" class="icon-btn-small" data-edit-recipe="${r.id}" aria-label="Edit ${escapeHtml(r.name)}">✎</button>
             <button type="button" class="icon-btn-small" data-delete-recipe="${r.id}" aria-label="Delete ${escapeHtml(r.name)}">×</button>
           </div>
         </div>
-        <button type="button" class="secondary-btn" style="margin:6px 0 10px;" data-log-recipe="${r.id}">Log a portion</button>
+        <div style="display:flex; gap:8px; margin:6px 0 14px;">
+          <button type="button" class="secondary-btn" data-log-recipe="${r.id}" ${draft ? 'disabled' : ''} style="text-align:center;${draft ? 'opacity:0.5;' : ''}">
+            ${draft ? 'Add cooked weight to log' : 'Log a portion'}
+          </button>
+          <button type="button" class="secondary-btn" data-cook-again="${r.id}" style="text-align:center;">Cook this again</button>
+        </div>
       </div>
     `);
     list.appendChild(row);
@@ -469,9 +691,16 @@ function renderRecipes() {
   list.querySelectorAll('[data-log-recipe]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const recipe = recipesById().get(btn.dataset.logRecipe);
+      if (!recipe || isDraftRecipe(recipe)) return;
       const grams = Math.round(recipe.cookedWeightG / recipe.portions);
       await db.put('logEntries', { id: crypto.randomUUID(), date: todayISO(), foodId: null, recipeId: recipe.id, grams });
       goTo('today');
+    });
+  });
+  list.querySelectorAll('[data-cook-again]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const recipe = recipesById().get(btn.dataset.cookAgain);
+      if (recipe) openRecipeModal(null, { copyFrom: recipe });
     });
   });
   list.querySelectorAll('[data-edit-recipe]').forEach(btn => {
@@ -494,9 +723,20 @@ function renderRecipes() {
 
 document.getElementById('add-recipe-btn').addEventListener('click', () => openRecipeModal(null));
 
-function openRecipeModal(recipe) {
+async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {}) {
   const isEdit = !!recipe;
-  const ingredients = isEdit ? recipe.ingredients.slice() : [{ foodId: '', grams: '' }];
+  const template = recipe ?? copyFrom;
+  const ingredients = restore
+    ? restore.rows.map(i => ({ ...i }))
+    : (template ? template.ingredients.map(i => ({ ...i })) : [{ foodId: '', grams: '' }]);
+
+  // Editing a recipe recomputes every portion ever logged from it, so a Sunday batch cooked
+  // with different weights must not be recorded by editing last week's recipe.
+  let loggedCount = 0;
+  if (isEdit) {
+    const allEntries = await db.getAll('logEntries');
+    loggedCount = allEntries.filter(e => e.recipeId === recipe.id).length;
+  }
 
   function ingredientRowHtml(ing, i) {
     const options = cache.foods.map(f => `<option value="${f.id}" ${ing.foodId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
@@ -509,17 +749,45 @@ function openRecipeModal(recipe) {
     `;
   }
 
+  const titleText = isEdit ? 'Edit recipe' : (copyFrom ? 'Cook this again' : 'Build a recipe');
+  const defaultName = restore
+    ? restore.name
+    : (copyFrom
+      ? `${copyFrom.name} — ${formatDateHeader(todayISO()).replace(/^\w+\s/, '')}`
+      : (isEdit ? recipe.name : ''));
+
+  const editWarning = isEdit && loggedCount > 0
+    ? `<div class="form-msg" style="color:var(--amber); margin:0 0 12px;">
+         This recipe has ${loggedCount} portion${loggedCount === 1 ? '' : 's'} already logged. Changing
+         the weights here also changes what those past meals say you ate. For a new batch, close this
+         and use “Cook this again” instead.
+       </div>`
+    : '';
+
+  const copyNote = copyFrom
+    ? `<div class="form-msg" style="color:var(--text-secondary); margin:0 0 12px;">
+         Copied from “${escapeHtml(copyFrom.name)}”. Adjust the weights for this batch — past meals stay untouched.
+       </div>`
+    : '';
+
   const body = `
-    <h2>${isEdit ? 'Edit recipe' : 'Build a recipe'}</h2>
+    <h2>${titleText}</h2>
+    ${editWarning}${copyNote}
     <label class="field-label" for="r-name">Name</label>
-    <input class="text-input" id="r-name" style="margin-bottom:12px;" value="${isEdit ? escapeHtml(recipe.name) : ''}">
+    <input class="text-input" id="r-name" style="margin-bottom:12px;" value="${escapeHtml(defaultName)}">
     <div class="field-label" style="margin-bottom:8px;">Raw ingredients</div>
     <div id="r-ingredients">${ingredients.map(ingredientRowHtml).join('')}</div>
-    <button type="button" class="secondary-btn" id="r-add-ing" style="margin-bottom:14px;">Add ingredient</button>
+    <div style="display:flex; gap:8px; margin-bottom:14px;">
+      <button type="button" class="secondary-btn" id="r-add-ing" style="text-align:center;">Add ingredient</button>
+      <button type="button" class="secondary-btn" id="r-new-food" style="text-align:center;">New food</button>
+    </div>
     <label class="field-label" for="r-cooked">Cooked / finished batch weight (g)</label>
-    <input class="text-input" id="r-cooked" type="number" style="margin-bottom:12px;" value="${isEdit ? recipe.cookedWeightG : ''}">
+    <input class="text-input" id="r-cooked" type="number" inputmode="numeric" style="margin-bottom:6px;" value="${restore ? escapeHtml(restore.cooked) : (isEdit && recipe.cookedWeightG != null ? recipe.cookedWeightG : '')}">
+    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">
+      Leave empty to save as a draft while the batch is still cooking. You can’t log portions until it’s filled in.
+    </div>
     <label class="field-label" for="r-portions">Portions</label>
-    <input class="text-input" id="r-portions" type="number" style="margin-bottom:12px;" value="${isEdit ? recipe.portions : ''}">
+    <input class="text-input" id="r-portions" type="number" inputmode="numeric" style="margin-bottom:12px;" value="${restore ? escapeHtml(restore.portions) : (template ? template.portions : '')}">
     <div class="form-msg error" id="r-error" hidden></div>
     <div class="modal-actions">
       <button type="button" class="secondary-btn" id="r-cancel">Cancel</button>
@@ -551,22 +819,44 @@ function openRecipeModal(recipe) {
     rerenderIngredients();
   });
 
+  // Adding a missing ingredient shouldn't cost you the recipe you're halfway through typing:
+  // snapshot the form, create the food, then rebuild this sheet exactly as it was.
+  document.getElementById('r-new-food').addEventListener('click', () => {
+    const snapshot = {
+      name: document.getElementById('r-name').value,
+      cooked: document.getElementById('r-cooked').value,
+      portions: document.getElementById('r-portions').value,
+      rows: rows.map(r => ({ ...r })),
+    };
+    openQuickAddFoodModal('', {
+      onSaved: async food => {
+        const emptyRow = snapshot.rows.find(r => !r.foodId);
+        if (emptyRow) emptyRow.foodId = food.id;
+        else snapshot.rows.push({ foodId: food.id, grams: '' });
+        await openRecipeModal(recipe, { copyFrom, restore: snapshot });
+        toast(`Added ${food.name}`);
+      },
+    });
+  });
+
   document.getElementById('r-cancel').addEventListener('click', closeModal);
   document.getElementById('r-save').addEventListener('click', async () => {
+    const cookedRaw = document.getElementById('r-cooked').value.trim();
     const obj = {
       id: isEdit ? recipe.id : slugify(document.getElementById('r-name').value),
       name: document.getElementById('r-name').value.trim(),
       ingredients: rows.filter(r => r.foodId).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
-      cookedWeightG: Number(document.getElementById('r-cooked').value),
+      cookedWeightG: cookedRaw === '' ? null : Number(cookedRaw),
       portions: Number(document.getElementById('r-portions').value),
     };
-    const errors = validateRecipe(obj);
+    const errors = validateRecipe(obj, { allowDraft: true });
     const errEl = document.getElementById('r-error');
     if (errors.length) { errEl.textContent = errors.join(' '); errEl.hidden = false; return; }
     await db.put('recipes', obj);
     await refreshCache();
     closeModal();
     renderRecipes();
+    if (isDraftRecipe(obj)) toast('Saved as draft — add the cooked weight when you weigh it');
   });
 }
 

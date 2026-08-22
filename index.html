@@ -92,6 +92,7 @@
     <label class="field-label" for="foodsearch">Food</label>
     <input id="foodsearch" class="text-input" type="text" placeholder="Search foods" autocomplete="off">
 
+    <div class="section-label" id="log-results-hint" style="margin-top:14px;" hidden>Most logged</div>
     <div class="search-results" id="log-search-results"></div>
 
     <div class="section-label" style="margin-top:26px;">Amount</div>
@@ -115,8 +116,9 @@
   <main id="screen-foods" class="screen" data-screen="foods" hidden>
     <h1 class="screen-title" style="margin-bottom:16px;">Foods</h1>
     <div class="tag-chips" id="foods-tag-chips"></div>
-    <button type="button" class="secondary-btn" id="add-food-btn" style="margin-bottom:14px;">Add food</button>
-    <button type="button" class="secondary-btn" id="paste-import-btn" style="margin-bottom:14px;">Paste from Claude</button>
+    <button type="button" class="secondary-btn" id="add-food-btn" style="margin-bottom:10px;">Add food</button>
+    <button type="button" class="secondary-btn" id="paste-import-btn" style="margin-bottom:10px;">Paste from Claude</button>
+    <button type="button" class="secondary-btn" id="copy-library-btn" style="margin-bottom:14px;">Copy my food list for Claude</button>
     <div class="entry-list" id="foods-list"></div>
     <div class="legend">
       <div>■ label — from packaging</div>

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   resolveTarget, weekdayOf, recipePerGram, recipePortionMacros,
   foodPortionMacros, heroState, validateFood, validateRecipe, entryMacros,
+  isDraftRecipe, findSimilarFoods, normalizeFoodName,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -141,6 +142,57 @@ test('validateFood: accepts a fully specified food', () => {
 test('validateRecipe: rejects a recipe without cookedWeightG', () => {
   const errors = validateRecipe({ id: 'r', name: 'R', ingredients: [{ foodId: 'f', grams: 100 }], portions: 2 });
   assert.ok(errors.some(e => e.includes('cookedWeightG')));
+});
+
+// --- Draft recipes (saved before the batch has been weighed) ---
+test('draft recipe: may be saved without cookedWeightG when drafts are allowed', () => {
+  const draft = { id: 'r', name: 'R', ingredients: [{ foodId: 'f', grams: 100 }], portions: 4 };
+  assert.deepEqual(validateRecipe(draft, { allowDraft: true }), []);
+});
+
+test('draft recipe: still rejected without cookedWeightG under normal (import) validation', () => {
+  const draft = { id: 'r', name: 'R', ingredients: [{ foodId: 'f', grams: 100 }], portions: 4 };
+  assert.ok(validateRecipe(draft).some(e => e.includes('cookedWeightG')));
+});
+
+test('draft recipe: allowDraft does not excuse a nonsensical cooked weight', () => {
+  const bad = { id: 'r', name: 'R', ingredients: [{ foodId: 'f', grams: 100 }], cookedWeightG: 0, portions: 4 };
+  assert.ok(validateRecipe(bad, { allowDraft: true }).some(e => e.includes('cookedWeightG')));
+  const negative = { ...bad, cookedWeightG: -5 };
+  assert.ok(validateRecipe(negative, { allowDraft: true }).some(e => e.includes('cookedWeightG')));
+});
+
+test('isDraftRecipe: identifies recipes that cannot yet be logged from', () => {
+  assert.equal(isDraftRecipe({ cookedWeightG: null }), true);
+  assert.equal(isDraftRecipe({ cookedWeightG: undefined }), true);
+  assert.equal(isDraftRecipe({ cookedWeightG: 0 }), true);
+  assert.equal(isDraftRecipe({ cookedWeightG: 1420 }), false);
+});
+
+// --- Near-duplicate detection ---
+test('findSimilarFoods: catches case and punctuation variants', () => {
+  const foods = [{ id: 'a', name: 'Chicken breast, raw' }];
+  assert.equal(findSimilarFoods('chicken breast raw', foods).length, 1);
+  assert.equal(findSimilarFoods('Chicken Breast', foods).length, 1);
+});
+
+test('findSimilarFoods: does not flag genuinely different foods', () => {
+  const foods = [{ id: 'a', name: 'Chicken breast, raw' }, { id: 'b', name: 'Olive oil' }];
+  assert.deepEqual(findSimilarFoods('Basmati rice, dry', foods), []);
+});
+
+test('findSimilarFoods: short names do not match by containment', () => {
+  const foods = [{ id: 'a', name: 'Eggplant' }];
+  assert.deepEqual(findSimilarFoods('Egg', foods), []);
+});
+
+test('findSimilarFoods: excludes the food being edited', () => {
+  const foods = [{ id: 'a', name: 'Chicken breast, raw' }];
+  assert.deepEqual(findSimilarFoods('Chicken breast, raw', foods, { excludeId: 'a' }), []);
+});
+
+test('normalizeFoodName: strips punctuation and collapses whitespace', () => {
+  assert.equal(normalizeFoodName("Tia's Granola —  No Sugar"), 'tia s granola no sugar');
 });
 
 test('entryMacros: resolves a recipe-based logEntry via recipeId', () => {
