@@ -1,0 +1,11 @@
+{
+  "name": "calorie-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single-user offline calorie and protein logging PWA.",
+  "scripts": {
+    "test": "node tests/logic.test.mjs",
+    "serve": "python -m http.server 8080"
+  }
+}

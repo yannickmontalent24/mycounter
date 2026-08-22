@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calorie &amp; Protein Tracker</title>
+<meta name="theme-color" content="#FAFAF7">
+<meta name="description" content="Single-user offline calorie and protein logging instrument.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Calories">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <main id="screen-today" class="screen" data-screen="today">
+    <div class="screen-title-row">
+      <h1 class="screen-title">Today</h1>
+      <div class="date-chip" id="today-date-chip"></div>
+    </div>
+
+    <div class="hero-grid">
+      <div class="hero-card kcal">
+        <div class="ring-wrap">
+          <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
+            <circle cx="62" cy="62" r="54" fill="none" stroke="var(--navy-tint-border)" stroke-width="7"></circle>
+            <circle id="kcal-ring" class="ring-progress" cx="62" cy="62" r="54" fill="none" stroke="var(--navy)" stroke-width="7" stroke-linecap="butt" stroke-dasharray="0 339.3"></circle>
+          </svg>
+          <div class="hero-center">
+            <div class="hero-number" id="kcal-hero">0</div>
+            <div class="hero-unit">kcal</div>
+          </div>
+        </div>
+        <div class="hero-state" id="kcal-state"><span class="mark">▼</span><span class="text">left today</span></div>
+        <div class="hero-of-target" id="kcal-of-target">— / —</div>
+      </div>
+
+      <div class="hero-card protein">
+        <div class="ring-wrap">
+          <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
+            <circle cx="62" cy="62" r="54" fill="none" stroke="var(--teal-tint-border)" stroke-width="7"></circle>
+            <circle id="protein-ring" class="ring-progress" cx="62" cy="62" r="54" fill="none" stroke="var(--teal)" stroke-width="7" stroke-linecap="butt" stroke-dasharray="0 339.3"></circle>
+          </svg>
+          <div class="hero-center">
+            <div class="hero-number" id="protein-hero">0</div>
+            <div class="hero-unit">g protein</div>
+          </div>
+        </div>
+        <div class="hero-state" id="protein-state"><span class="mark">▼</span><span class="text">left today</span></div>
+        <div class="hero-of-target" id="protein-of-target">— / —</div>
+      </div>
+    </div>
+
+    <div class="section-header-row">
+      <div class="section-label">Entries</div>
+      <div class="totals" id="today-totals-line">0 kcal · 0 g</div>
+    </div>
+
+    <div class="entry-list" id="today-entry-list"></div>
+
+    <div class="day-total-strip">
+      <span>Day total</span>
+      <span id="today-day-total">0 kcal · 0 g</span>
+    </div>
+
+    <button type="button" class="secondary-btn" id="export-day-btn" style="margin-top:16px;">Copy today for Claude</button>
+  </main>
+
+  <main id="screen-log" class="screen" data-screen="log" hidden>
+    <h1 class="screen-title" style="margin-bottom:18px;">Log entry</h1>
+
+    <label class="field-label" for="foodsearch">Food</label>
+    <input id="foodsearch" class="text-input" type="text" placeholder="Search foods" autocomplete="off">
+
+    <div class="search-results" id="log-search-results"></div>
+
+    <div class="section-label" style="margin-top:26px;">Amount</div>
+    <div class="amount-row">
+      <button type="button" class="stepper-btn" id="grams-down" aria-label="Decrease by 10 grams">−</button>
+      <div class="amount-field">
+        <input id="gramsfield" type="text" inputmode="numeric" aria-label="Amount in grams" maxlength="4">
+        <span class="unit">g</span>
+      </div>
+      <button type="button" class="stepper-btn" id="grams-up" aria-label="Increase by 10 grams">+</button>
+    </div>
+
+    <div class="draft-summary">
+      <span class="name" id="log-draft-name">No food selected</span>
+      <span class="macros" id="log-draft-macros">—</span>
+    </div>
+
+    <button type="button" class="primary-btn" id="confirm-log-btn">Add to today</button>
+  </main>
+
+  <main id="screen-foods" class="screen" data-screen="foods" hidden>
+    <h1 class="screen-title" style="margin-bottom:16px;">Foods</h1>
+    <div class="tag-chips" id="foods-tag-chips"></div>
+    <button type="button" class="secondary-btn" id="add-food-btn" style="margin-bottom:14px;">Add food</button>
+    <button type="button" class="secondary-btn" id="paste-import-btn" style="margin-bottom:14px;">Paste from Claude</button>
+    <div class="entry-list" id="foods-list"></div>
+    <div class="legend">
+      <div>■ label — from packaging</div>
+      <div>□ reference — published table</div>
+      <div>◇ estimate — entered by hand</div>
+    </div>
+  </main>
+
+  <main id="screen-recipes" class="screen" data-screen="recipes" hidden>
+    <h1 class="screen-title" style="margin-bottom:16px;">Recipes</h1>
+    <button type="button" class="secondary-btn" id="add-recipe-btn" style="margin-bottom:14px;">Build a recipe</button>
+    <div class="entry-list" id="recipes-list"></div>
+  </main>
+
+  <main id="screen-history" class="screen" data-screen="history" hidden>
+    <div class="screen-title-row">
+      <h1 class="screen-title">History</h1>
+      <div class="readonly-badge">read only</div>
+    </div>
+    <button type="button" class="secondary-btn" id="export-range-btn" style="margin-bottom:14px;">Copy a date range for Claude</button>
+    <div class="history-list" id="history-list"></div>
+  </main>
+
+  <main id="screen-settings" class="screen" data-screen="settings" hidden>
+    <h1 class="screen-title" style="margin-bottom:20px;">Settings</h1>
+
+    <div class="settings-section">
+      <div class="section-label" style="margin-bottom:10px;">Daily targets</div>
+      <div class="settings-list" id="weekday-targets-list"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="section-label" style="margin-bottom:10px;">Date-specific overrides</div>
+      <div id="overrides-list"></div>
+      <button type="button" class="secondary-btn" id="add-override-btn" style="margin-top:10px;">Add a date override</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="section-label" style="margin-bottom:10px;">Body weight</div>
+      <div id="weight-log-list"></div>
+      <button type="button" class="secondary-btn" id="add-weight-btn" style="margin-top:10px;">Log a weight</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="section-label" style="margin-bottom:10px;">Data</div>
+      <div class="data-actions">
+        <button type="button" class="secondary-btn" id="export-all-btn">Export all data (JSON)</button>
+      </div>
+    </div>
+  </main>
+
+  <nav class="tab-bar" aria-label="Screens">
+    <button type="button" class="tab-btn" data-go="today" aria-label="Today">
+      <span class="icon" aria-hidden="true">◎</span><span>Today</span><span class="indicator" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="tab-btn" data-go="log" aria-label="Log entry">
+      <span class="icon" aria-hidden="true">⊕</span><span>Log</span><span class="indicator" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="tab-btn" data-go="foods" aria-label="Foods">
+      <span class="icon" aria-hidden="true">▤</span><span>Foods</span><span class="indicator" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="tab-btn" data-go="recipes" aria-label="Recipes">
+      <span class="icon" aria-hidden="true">⊞</span><span>Recipes</span><span class="indicator" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="tab-btn" data-go="history" aria-label="History">
+      <span class="icon" aria-hidden="true">↺</span><span>History</span><span class="indicator" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="tab-btn" data-go="settings" aria-label="Settings">
+      <span class="icon" aria-hidden="true">⚙</span><span>Settings</span><span class="indicator" aria-hidden="true"></span>
+    </button>
+  </nav>
+
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal-sheet" id="modal-sheet"></div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
