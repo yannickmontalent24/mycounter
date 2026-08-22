@@ -104,6 +104,7 @@ a { color: var(--navy); }
   display: flex;
   flex-direction: column;
 }
+#app[hidden] { display: none; }
 
 .screen {
   flex: 1;
@@ -717,6 +718,7 @@ a { color: var(--navy); }
   padding: 24px;
   background: var(--surface);
 }
+.login-screen[hidden] { display: none; }
 
 .login-card {
   width: 100%;
