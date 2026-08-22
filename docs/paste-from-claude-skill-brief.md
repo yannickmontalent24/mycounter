@@ -101,12 +101,47 @@ array, it is a recipe; otherwise it is a food.** There is no `type` field.
 |---|---|---|
 | `id` | **yes** | Non-empty string. Kebab-case slug. See §7. |
 | `name` | **yes** | Non-empty string. Shown in lists; keep under ~40 chars or it truncates with an ellipsis. |
-| `per100g.kcal` | **yes** | Number, per 100 grams. |
-| `per100g.protein` | **yes** | Number, per 100 grams. Decimals fine (`10.3`). |
+| `per100g` **or** `per100ml` | **yes** | Exactly one, never both. Use `per100ml` for anything drunk rather than eaten — see §4a. |
+| `per100g.kcal` | **yes** | Number, per 100 grams (or 100 ml). |
+| `per100g.protein` | **yes** | Number, per 100 grams (or 100 ml). Decimals fine (`10.3`). |
 | `per100g.carbs` / `.fat` / `.fibre` | no | Number or `null`. Not validated, not currently displayed — include when known, `null` when not. Never guess a number here just to fill the field. |
-| `defaultPortionG` | no, but **always include** | Number. Pre-fills the grams field on the Log screen. Falls back to 100 if omitted. This is the single biggest lever on the "log in under five seconds" goal — set it to a realistic single serving, not a round number. |
+| `defaultPortionG` / `defaultPortionMl` | no, but **always include** | Number, matching whichever base you used. Pre-fills the amount field on the Log screen. Falls back to 100 if omitted. This is the single biggest lever on the "log in under five seconds" goal — set it to a realistic single serving (a 330 ml can, a 30 ml espresso), not a round number. |
 | `source` | **yes** | `"label"` \| `"reference"` \| `"estimate"`. See §5. |
 | `tags` | no | Array of strings. Drives the filter chips on the Foods tab. See §8. |
+
+### 4a. Drinks — use `per100ml`, never convert
+
+Anything drunk rather than eaten (soft drinks, coffee, juice, beer, spirits, milk) should be
+emitted with `per100ml` and `defaultPortionMl`:
+
+```json
+{
+  "id": "coca-cola",
+  "name": "Coca-Cola",
+  "per100ml": { "kcal": 42, "protein": 0, "carbs": 10.6, "fat": 0, "fibre": null },
+  "defaultPortionMl": 330,
+  "source": "label",
+  "tags": ["drinks"]
+}
+```
+
+The app then logs that food in millilitres, shows "42 kcal · 0 g /100ml", and exports
+`Coca-Cola 330ml`. A 330 ml can comes out at 139 kcal — `42 × 3.3`.
+
+**Never apply a density conversion.** Drink labels are already printed per 100 ml, so converting
+ml to grams and *then* applying per-100 g figures transforms the number twice and silently
+inflates every portion. There is no density field in the schema and none should be invented.
+The unit is a label on the food, not a conversion factor.
+
+Corollaries:
+
+- Don't mix bases. `per100g` with `defaultPortionMl`, or `per100ml` alongside `unit: "g"`, are
+  both rejected outright.
+- If a label genuinely gives per-100 g for a liquid (some syrups and oils do), use `per100g` and
+  let it be logged in grams. Match the label; don't translate it.
+- `unit: "g" | "ml"` is also accepted explicitly, but `per100ml` already implies `ml`, so
+  there's rarely a reason to send it.
+- Solids stay exactly as before — omitting the unit means grams.
 
 ### Recipe
 
@@ -309,8 +344,9 @@ food `estimate` and say what's uncertain — never quietly produce a plausible-l
 9. **Per-portion figures in `per100g`.** The app has no per-piece or per-serving concept. A food
    sold by the unit (one egg, one bar) must still be expressed per 100 g, with
    `defaultPortionG` set to the weight of one unit.
-10. **Volume units.** The app is grams-only; there is no ml. For liquids, either convert using
-    density or treat per-100 ml as per-100 g — and say which you did in the prose.
+10. **Density-converting a drink.** Emitting `per100g` for a liquid by converting its per-100 ml
+    label, or including a density factor of any kind. The app measures drinks in ml directly —
+    see §4a. Converting corrupts the numbers.
 
 ---
 
@@ -407,6 +443,31 @@ exists because friction is what kills daily logging by week three (main brief §
     ],
     "cookedWeightG": 1900,
     "portions": 4
+  }
+]
+```
+
+**C2. Drinks**
+
+> Both per 100 ml, straight off the labels. The espresso is a published reference figure.
+
+```json
+[
+  {
+    "id": "coca-cola",
+    "name": "Coca-Cola",
+    "per100ml": { "kcal": 42, "protein": 0, "carbs": 10.6, "fat": 0, "fibre": null },
+    "defaultPortionMl": 330,
+    "source": "label",
+    "tags": ["drinks"]
+  },
+  {
+    "id": "espresso",
+    "name": "Espresso",
+    "per100ml": { "kcal": 2, "protein": 0.1, "carbs": null, "fat": null, "fibre": null },
+    "defaultPortionMl": 30,
+    "source": "reference",
+    "tags": ["drinks"]
   }
 ]
 ```

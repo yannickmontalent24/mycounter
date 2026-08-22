@@ -82,6 +82,23 @@ Three ways in, in rough order of how often you'll use them:
 Near-duplicate names ("Chicken breast" vs "Chicken breast, raw") trigger a warning on save;
 tap Save twice to add anyway.
 
+### Grams and millilitres
+
+Each food carries a unit — `g` (default) or `ml` — chosen when you add it. Pick millilitres for
+anything drunk rather than eaten, and the Log screen switches its amount field, steppers, and
+exports to ml for that food. Imports can use `per100ml` / `defaultPortionMl` instead of the gram
+keys, which sets the unit automatically.
+
+**Nothing is ever converted between the two.** Drink labels are already printed per 100 ml, so a
+density conversion would apply the transformation twice and inflate every portion. The unit is a
+label on the food, not a conversion factor — 330 ml of a 42 kcal/100 ml drink is 139 kcal, full
+stop. Recipes are unaffected: a batch is weighed, so portions logged from it are always grams,
+even when an ingredient (oil, milk) is measured in ml.
+
+Internally the stored keys stay `per100g` and `defaultPortionG` regardless of unit — read them
+as "per 100 units" and "default portion". Renaming them would mean migrating existing data for
+no functional gain.
+
 ### Recipes: drafts and re-cooking
 
 - **Drafts.** Leave the cooked batch weight empty to save a recipe while the food is still

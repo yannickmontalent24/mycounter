@@ -3,7 +3,7 @@ import { seedSharedIfEmpty, seedUserIfEmpty } from './seed.js';
 import {
   resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
   foodPortionMacros, recipePerGram, validateFood, validateRecipe, formatDateHeader,
-  isDraftRecipe, findSimilarFoods,
+  isDraftRecipe, findSimilarFoods, unitOf,
 } from './logic.js';
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
@@ -158,7 +158,7 @@ async function renderToday() {
       <div class="entry-row">
         <div class="entry-main">
           <div class="entry-name">${escapeHtml(e.name)}</div>
-          <div class="entry-detail">${e.grams} g</div>
+          <div class="entry-detail">${e.grams} ${e.unit}</div>
         </div>
         <div class="entry-values">
           <div>${e.kcal} kcal</div>
@@ -214,12 +214,25 @@ document.getElementById('export-day-btn').addEventListener('click', async () => 
 // ==================== LOG ENTRY ====================
 const logState = { query: '', pickedId: null, grams: '' };
 
+function currentLogUnit() {
+  const picked = logState.pickedId ? foodsById().get(logState.pickedId) : null;
+  return unitOf(picked);
+}
+
 function renderLog() {
   const input = document.getElementById('foodsearch');
   input.value = logState.query;
   renderLogResults();
   renderLogDraft();
   document.getElementById('gramsfield').value = logState.grams;
+
+  // The amount field speaks the selected food's unit: drinks are logged in ml, never converted.
+  const unit = currentLogUnit();
+  document.getElementById('amount-unit').textContent = unit;
+  document.getElementById('gramsfield').setAttribute('aria-label', `Amount in ${unit === 'ml' ? 'millilitres' : 'grams'}`);
+  document.getElementById('grams-down').setAttribute('aria-label', `Decrease by 10 ${unit === 'ml' ? 'millilitres' : 'grams'}`);
+  document.getElementById('grams-up').setAttribute('aria-label', `Increase by 10 ${unit === 'ml' ? 'millilitres' : 'grams'}`);
+  document.getElementById('amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
 }
 
 function renderLogResults() {
@@ -245,7 +258,7 @@ function renderLogResults() {
     const btn = el(`
       <button type="button" class="search-result-btn">
         <span class="name">${escapeHtml(f.name)}</span>
-        <span class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100g</span>
+        <span class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100${unitOf(f)}</span>
         <span class="check">${logState.pickedId === f.id ? '●' : '○'}</span>
       </button>
     `);
@@ -278,11 +291,16 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
     <h2>Quick add food</h2>
     <label class="field-label" for="q-name">Name</label>
     <input class="text-input" id="q-name" style="margin-bottom:12px;" value="${escapeHtml(prefillName)}">
-    <label class="field-label" for="q-kcal">Calories per 100 g</label>
+    <label class="field-label" for="q-unit">Measured in</label>
+    <select class="text-input" id="q-unit" style="margin-bottom:12px;">
+      <option value="g">grams — solid food</option>
+      <option value="ml">millilitres — drinks</option>
+    </select>
+    <label class="field-label" for="q-kcal"><span data-unit-word>Calories per 100 g</span></label>
     <input class="text-input" id="q-kcal" type="number" inputmode="numeric" style="margin-bottom:12px;">
-    <label class="field-label" for="q-protein">Protein per 100 g</label>
+    <label class="field-label" for="q-protein"><span data-unit-word>Protein per 100 g</span></label>
     <input class="text-input" id="q-protein" type="number" inputmode="decimal" style="margin-bottom:12px;">
-    <label class="field-label" for="q-portion">Usual portion (g)</label>
+    <label class="field-label" for="q-portion"><span data-unit-word>Usual portion (g)</span></label>
     <input class="text-input" id="q-portion" type="number" inputmode="numeric" style="margin-bottom:12px;" value="100">
     <label class="field-label" for="q-source">Source</label>
     <select class="text-input" id="q-source" style="margin-bottom:12px;">
@@ -299,6 +317,14 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
   `;
   openModal(body);
   document.getElementById('q-cancel').addEventListener('click', closeModal);
+
+  const qUnitSelect = document.getElementById('q-unit');
+  const applyQuickUnitLabels = () => {
+    const u = qUnitSelect.value;
+    const words = [`Calories per 100 ${u}`, `Protein per 100 ${u}`, `Usual portion (${u})`];
+    document.querySelectorAll('#modal-sheet [data-unit-word]').forEach((span, i) => { span.textContent = words[i]; });
+  };
+  qUnitSelect.addEventListener('change', applyQuickUnitLabels);
 
   let duplicateAcknowledged = false;
   document.getElementById('q-save').addEventListener('click', async () => {
@@ -325,6 +351,7 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
       },
       defaultPortionG: num(document.getElementById('q-portion').value) ?? 100,
       source: document.getElementById('q-source').value,
+      unit: qUnitSelect.value,
       tags: [],
     };
     const errors = validateFood(obj);
@@ -425,7 +452,7 @@ function renderFoods() {
       <div class="food-row">
         <div class="main">
           <div class="name">${escapeHtml(f.name)}</div>
-          <div class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100g</div>
+          <div class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100${unitOf(f)}</div>
         </div>
         <div class="source-badge" style="border:1px solid ${badgeBorder}; background:${badgeBg};">
           <span class="glyph" style="color:${badgeColor};">${SOURCE_GLYPH[f.source] ?? '?'}</span>
@@ -456,17 +483,22 @@ function openFoodModal(food) {
     <h2>${isEdit ? 'Edit food' : 'Add food'}</h2>
     <label class="field-label" for="f-name">Name</label>
     <input class="text-input" id="f-name" style="margin-bottom:12px;" value="${isEdit ? escapeHtml(food.name) : ''}">
-    <label class="field-label" for="f-kcal">Calories per 100 g</label>
+    <label class="field-label" for="f-unit">Measured in</label>
+    <select class="text-input" id="f-unit" style="margin-bottom:12px;">
+      <option value="g" ${!isEdit || unitOf(food) === 'g' ? 'selected' : ''}>grams — solid food</option>
+      <option value="ml" ${isEdit && unitOf(food) === 'ml' ? 'selected' : ''}>millilitres — drinks</option>
+    </select>
+    <label class="field-label" for="f-kcal"><span data-unit-word>Calories per 100 g</span></label>
     <input class="text-input" id="f-kcal" type="number" style="margin-bottom:12px;" value="${isEdit ? food.per100g.kcal : ''}">
-    <label class="field-label" for="f-protein">Protein per 100 g</label>
+    <label class="field-label" for="f-protein"><span data-unit-word>Protein per 100 g</span></label>
     <input class="text-input" id="f-protein" type="number" style="margin-bottom:12px;" value="${isEdit ? food.per100g.protein : ''}">
-    <label class="field-label" for="f-carbs">Carbs per 100 g (optional)</label>
+    <label class="field-label" for="f-carbs"><span data-unit-word>Carbs per 100 g (optional)</span></label>
     <input class="text-input" id="f-carbs" type="number" style="margin-bottom:12px;" value="${isEdit && food.per100g.carbs != null ? food.per100g.carbs : ''}">
-    <label class="field-label" for="f-fat">Fat per 100 g (optional)</label>
+    <label class="field-label" for="f-fat"><span data-unit-word>Fat per 100 g (optional)</span></label>
     <input class="text-input" id="f-fat" type="number" style="margin-bottom:12px;" value="${isEdit && food.per100g.fat != null ? food.per100g.fat : ''}">
-    <label class="field-label" for="f-fibre">Fibre per 100 g (optional)</label>
+    <label class="field-label" for="f-fibre"><span data-unit-word>Fibre per 100 g (optional)</span></label>
     <input class="text-input" id="f-fibre" type="number" style="margin-bottom:12px;" value="${isEdit && food.per100g.fibre != null ? food.per100g.fibre : ''}">
-    <label class="field-label" for="f-portion">Default portion (g)</label>
+    <label class="field-label" for="f-portion"><span data-unit-word>Default portion (g)</span></label>
     <input class="text-input" id="f-portion" type="number" style="margin-bottom:12px;" value="${isEdit ? food.defaultPortionG : 100}">
     <label class="field-label" for="f-source">Source</label>
     <select class="text-input" id="f-source" style="margin-bottom:12px;">
@@ -485,6 +517,19 @@ function openFoodModal(food) {
   `;
   openModal(body);
   document.getElementById('f-cancel').addEventListener('click', closeModal);
+
+  const fUnitSelect = document.getElementById('f-unit');
+  const applyFoodUnitLabels = () => {
+    const u = fUnitSelect.value;
+    const words = [
+      `Calories per 100 ${u}`, `Protein per 100 ${u}`, `Carbs per 100 ${u} (optional)`,
+      `Fat per 100 ${u} (optional)`, `Fibre per 100 ${u} (optional)`, `Default portion (${u})`,
+    ];
+    document.querySelectorAll('#modal-sheet [data-unit-word]').forEach((span, i) => { span.textContent = words[i]; });
+  };
+  fUnitSelect.addEventListener('change', applyFoodUnitLabels);
+  applyFoodUnitLabels();
+
   let duplicateAcknowledged = false;
   document.getElementById('f-save').addEventListener('click', async () => {
     const num = v => (v === '' ? null : Number(v));
@@ -511,6 +556,7 @@ function openFoodModal(food) {
       },
       defaultPortionG: num(document.getElementById('f-portion').value) ?? 100,
       source: document.getElementById('f-source').value,
+      unit: fUnitSelect.value,
       tags: document.getElementById('f-tags').value.split(',').map(t => t.trim()).filter(Boolean),
     };
     const errors = validateFood(obj);
@@ -594,7 +640,7 @@ function openImportPreview(plan) {
 
   const rowsHtml = plan.items.map((it, i) => {
     const macros = it.kind === 'food'
-      ? `${it.obj.per100g.kcal} kcal · ${it.obj.per100g.protein} g /100g`
+      ? `${it.obj.per100g.kcal} kcal · ${it.obj.per100g.protein} g /100${unitOf(it.obj)}`
       : `${it.obj.ingredients.length} ingredient${it.obj.ingredients.length === 1 ? '' : 's'} · ${it.obj.portions} portions`;
     const control = it.conflict
       ? `<select class="text-input" data-import-action="${i}" style="width:auto; height:40px; padding:0 8px; font-size:0.8125rem;">
@@ -740,10 +786,12 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
 
   function ingredientRowHtml(ing, i) {
     const options = cache.foods.map(f => `<option value="${f.id}" ${ing.foodId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+    const chosen = ing.foodId ? cache.foods.find(f => f.id === ing.foodId) : null;
+    const placeholder = chosen && unitOf(chosen) === 'ml' ? 'ml (raw)' : 'grams (raw)';
     return `
       <div style="display:flex; gap:8px; margin-bottom:8px;" data-ing-row="${i}">
         <select class="text-input" data-ing-food style="flex:2;"><option value="">Select food…</option>${options}</select>
-        <input class="text-input" data-ing-grams type="number" placeholder="grams (raw)" style="flex:1;" value="${ing.grams || ''}">
+        <input class="text-input" data-ing-grams type="number" placeholder="${placeholder}" aria-label="Amount of ingredient ${i + 1}" style="flex:1;" value="${ing.grams || ''}">
         <button type="button" class="icon-btn-small" data-remove-ing aria-label="Remove ingredient">×</button>
       </div>
     `;
@@ -804,7 +852,11 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
   }
 
   function wireIngredientRows() {
-    document.querySelectorAll('[data-ing-food]').forEach((sel, i) => sel.addEventListener('change', () => { rows[i].foodId = sel.value; }));
+    document.querySelectorAll('[data-ing-food]').forEach((sel, i) => sel.addEventListener('change', () => {
+      rows[i].foodId = sel.value;
+      // Re-render so the amount placeholder switches to ml when a drink is chosen.
+      rerenderIngredients();
+    }));
     document.querySelectorAll('[data-ing-grams]').forEach((inp, i) => inp.addEventListener('input', () => { rows[i].grams = inp.value; }));
     document.querySelectorAll('[data-remove-ing]').forEach((btn, i) => btn.addEventListener('click', () => {
       rows.splice(i, 1);

@@ -62,12 +62,13 @@ export function entryMacros(entry, foodsById, recipesById) {
   if (entry.foodId != null) {
     const food = foodsById.get(entry.foodId);
     if (!food) return null;
-    return { name: food.name, ...foodPortionMacros(food, entry.grams) };
+    return { name: food.name, unit: unitOf(food), ...foodPortionMacros(food, entry.grams) };
   }
   if (entry.recipeId != null) {
     const recipe = recipesById.get(entry.recipeId);
     if (!recipe) return null;
-    return { name: recipe.name, ...recipePortionMacros(recipe, foodsById, entry.grams) };
+    // A batch is weighed, so recipe portions are always grams regardless of ingredient units.
+    return { name: recipe.name, unit: 'g', ...recipePortionMacros(recipe, foodsById, entry.grams) };
   }
   return null;
 }
@@ -96,6 +97,17 @@ export function ringDash(consumed, target) {
 }
 
 const VALID_SOURCES = new Set(['label', 'reference', 'estimate']);
+export const VALID_UNITS = new Set(['g', 'ml']);
+
+// Liquids are measured by volume, and their labels are already printed per 100 ml — so the
+// unit is a property of the food, and the stored figures are "per 100 units of that unit".
+// Nothing is ever converted between g and ml: a density conversion on top of a per-100-ml
+// label would apply the transformation twice and silently corrupt every portion.
+// (`per100g` / `defaultPortionG` keep their key names to avoid migrating stored data; read
+// them as "per 100 units" and "default portion" respectively.)
+export function unitOf(food) {
+  return food?.unit === 'ml' ? 'ml' : 'g';
+}
 
 export function validateFood(obj) {
   const errors = [];
@@ -104,6 +116,7 @@ export function validateFood(obj) {
   if (!obj.per100g || typeof obj.per100g.kcal !== 'number') errors.push('food.per100g.kcal is required');
   if (!obj.per100g || typeof obj.per100g.protein !== 'number') errors.push('food.per100g.protein is required');
   if (!VALID_SOURCES.has(obj.source)) errors.push(`food.source must be one of label/reference/estimate (got: ${obj.source ?? 'missing'})`);
+  if (obj.unit != null && !VALID_UNITS.has(obj.unit)) errors.push(`food.unit must be "g" or "ml" (got: ${obj.unit})`);
   return errors;
 }
 
@@ -161,7 +174,7 @@ export function formatDateHeader(dateStr) {
 
 export function exportDayText(dateStr, resolvedEntries, target) {
   const header = `${dateStr} (${formatDateHeader(dateStr).split(' ')[0]})`;
-  const lines = resolvedEntries.map(e => `${e.name} ${e.grams}g — ${e.kcal} kcal, ${e.protein.toFixed(1)} P`);
+  const lines = resolvedEntries.map(e => `${e.name} ${e.grams}${e.unit ?? 'g'} — ${e.kcal} kcal, ${e.protein.toFixed(1)} P`);
   const kcalTotal = resolvedEntries.reduce((a, e) => a + e.kcal, 0);
   const protTotal = resolvedEntries.reduce((a, e) => a + e.protein, 0);
   const targetText = target.kcal != null && target.protein != null

@@ -95,12 +95,12 @@
     <div class="section-label" id="log-results-hint" style="margin-top:14px;" hidden>Most logged</div>
     <div class="search-results" id="log-search-results"></div>
 
-    <div class="section-label" style="margin-top:26px;">Amount</div>
+    <div class="section-label" style="margin-top:26px;" id="amount-label">Amount (g)</div>
     <div class="amount-row">
       <button type="button" class="stepper-btn" id="grams-down" aria-label="Decrease by 10 grams">−</button>
       <div class="amount-field">
         <input id="gramsfield" type="text" inputmode="numeric" aria-label="Amount in grams" maxlength="4">
-        <span class="unit">g</span>
+        <span class="unit" id="amount-unit">g</span>
       </div>
       <button type="button" class="stepper-btn" id="grams-up" aria-label="Increase by 10 grams">+</button>
     </div>

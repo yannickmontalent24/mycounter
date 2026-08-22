@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
   resolveTarget, weekdayOf, recipePerGram, recipePortionMacros,
   foodPortionMacros, heroState, validateFood, validateRecipe, entryMacros,
-  isDraftRecipe, findSimilarFoods, normalizeFoodName,
+  isDraftRecipe, findSimilarFoods, normalizeFoodName, unitOf, exportDayText,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -193,6 +193,67 @@ test('findSimilarFoods: excludes the food being edited', () => {
 
 test('normalizeFoodName: strips punctuation and collapses whitespace', () => {
   assert.equal(normalizeFoodName("Tia's Granola —  No Sugar"), 'tia s granola no sugar');
+});
+
+// --- Millilitre foods (drinks) ---
+test('unitOf: defaults to grams, honours ml, ignores anything else', () => {
+  assert.equal(unitOf({}), 'g');
+  assert.equal(unitOf({ unit: 'g' }), 'g');
+  assert.equal(unitOf({ unit: 'ml' }), 'ml');
+  assert.equal(unitOf(undefined), 'g');
+});
+
+test('ml food: macros are NOT density-converted — 100 ml of a per-100ml label is 1x', () => {
+  // Coca-Cola label: 42 kcal per 100 ml. A 330 ml can must be 139 kcal, not 139 x density.
+  const coke = { per100g: { kcal: 42, protein: 0 }, unit: 'ml' };
+  assert.deepEqual(foodPortionMacros(coke, 330), { kcal: 139, protein: 0 });
+});
+
+test('ml food: an espresso logged in ml resolves with the ml unit', () => {
+  const foods = new Map([['espresso', { id: 'espresso', name: 'Espresso', unit: 'ml', per100g: { kcal: 2, protein: 0.1 } }]]);
+  const entry = { id: '1', date: '2026-08-22', foodId: 'espresso', recipeId: null, grams: 30 };
+  const result = entryMacros(entry, foods, new Map());
+  assert.equal(result.unit, 'ml');
+  assert.equal(result.name, 'Espresso');
+});
+
+test('gram food: entryMacros still reports grams for untouched existing foods', () => {
+  const foods = new Map([['chicken', { id: 'chicken', name: 'Chicken', per100g: { kcal: 106, protein: 24 } }]]);
+  const entry = { id: '1', date: '2026-08-22', foodId: 'chicken', recipeId: null, grams: 150 };
+  assert.equal(entryMacros(entry, foods, new Map()).unit, 'g');
+});
+
+test('recipe portions stay in grams even when an ingredient is measured in ml', () => {
+  const foods = new Map([
+    ['oil', { id: 'oil', name: 'Olive oil', unit: 'ml', per100g: { kcal: 884, protein: 0, carbs: null, fat: null, fibre: null } }],
+    ['chicken', { id: 'chicken', name: 'Chicken', per100g: { kcal: 106, protein: 24, carbs: null, fat: null, fibre: null } }],
+  ]);
+  const recipes = new Map([['b', {
+    id: 'b', name: 'Batch', cookedWeightG: 900, portions: 4,
+    ingredients: [{ foodId: 'chicken', grams: 600 }, { foodId: 'oil', grams: 20 }],
+  }]]);
+  const entry = { id: '1', date: '2026-08-22', recipeId: 'b', foodId: null, grams: 225 };
+  const result = entryMacros(entry, foods, recipes);
+  assert.equal(result.unit, 'g', 'a weighed batch is always grams');
+  // 20 ml of oil contributes its macros directly, no conversion applied
+  const expectedTotal = 106 * 6 + 884 * 0.2;
+  assert.equal(result.kcal, Math.round((expectedTotal / 900) * 225));
+});
+
+test('validateFood: rejects an unrecognised unit but allows it to be omitted', () => {
+  const base = { id: 'x', name: 'X', per100g: { kcal: 1, protein: 1 }, source: 'label' };
+  assert.deepEqual(validateFood(base), []);
+  assert.deepEqual(validateFood({ ...base, unit: 'ml' }), []);
+  assert.ok(validateFood({ ...base, unit: 'oz' }).some(e => e.includes('unit')));
+});
+
+test('exportDayText: writes ml for drinks and g for solids', () => {
+  const text = exportDayText('2026-08-22', [
+    { name: 'Espresso', grams: 30, unit: 'ml', kcal: 1, protein: 0 },
+    { name: 'Chicken', grams: 150, unit: 'g', kcal: 159, protein: 36 },
+  ], { kcal: 2000, protein: 120 });
+  assert.ok(text.includes('Espresso 30ml —'), text);
+  assert.ok(text.includes('Chicken 150g —'), text);
 });
 
 test('entryMacros: resolves a recipe-based logEntry via recipeId', () => {

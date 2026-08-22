@@ -17,7 +17,7 @@ function resolveEntriesForDay(entries, ctx) {
     .map(e => {
       const macros = entryMacros(e, ctx.foodsById, ctx.recipesById);
       if (!macros) return null;
-      return { grams: e.grams, name: macros.name, kcal: macros.kcal, protein: macros.protein };
+      return { grams: e.grams, unit: macros.unit, name: macros.name, kcal: macros.kcal, protein: macros.protein };
     })
     .filter(Boolean);
 }
@@ -72,6 +72,35 @@ export class ImportError extends Error {}
 // paste (a bad object must never reach the database), but an ID collision is no longer fatal —
 // it becomes a per-item choice in the UI, since Claude has no reliable way to know what the
 // library already contains.
+// Drinks are labelled per 100 ml, so the import accepts `per100ml` / `defaultPortionMl` as
+// self-documenting alternatives to the gram-based keys. Both normalise onto the same stored
+// shape with a `unit` marker — no value is ever converted, only labelled.
+function normalizeImportedFood(obj, index) {
+  const hasG = obj.per100g != null;
+  const hasMl = obj.per100ml != null;
+  if (hasG && hasMl) {
+    throw new ImportError(`Item ${index + 1}: give either per100g or per100ml, not both.`);
+  }
+  if (obj.unit != null && obj.unit !== 'g' && obj.unit !== 'ml') {
+    throw new ImportError(`Item ${index + 1}: unit must be "g" or "ml" (got: ${obj.unit}).`);
+  }
+  if (hasMl && obj.unit === 'g') {
+    throw new ImportError(`Item ${index + 1}: per100ml contradicts unit "g".`);
+  }
+
+  const unit = hasMl ? 'ml' : (obj.unit === 'ml' ? 'ml' : 'g');
+  const portion = obj.defaultPortionMl ?? obj.defaultPortionG;
+  const normalized = {
+    ...obj,
+    per100g: hasMl ? obj.per100ml : obj.per100g,
+    unit,
+  };
+  if (portion != null) normalized.defaultPortionG = portion;
+  delete normalized.per100ml;
+  delete normalized.defaultPortionMl;
+  return normalized;
+}
+
 export async function prepareImport(text) {
   const { validateFood, validateRecipe } = await import('./logic.js');
   let parsed;
@@ -90,9 +119,10 @@ export async function prepareImport(text) {
   // Foods arriving in this same paste count as available to recipes in it.
   const incomingFoodIds = new Set(parsed.filter(o => !Array.isArray(o.ingredients)).map(o => o.id));
 
-  const items = parsed.map((obj, i) => {
-    const isRecipe = Array.isArray(obj.ingredients);
+  const items = parsed.map((raw, i) => {
+    const isRecipe = Array.isArray(raw.ingredients);
     const label = isRecipe ? 'recipe' : 'food';
+    const obj = isRecipe ? raw : normalizeImportedFood(raw, i);
     const errors = isRecipe ? validateRecipe(obj) : validateFood(obj);
     if (errors.length) throw new ImportError(`Item ${i + 1} (${label}): ${errors.join('; ')}`);
 
@@ -140,7 +170,7 @@ export async function exportLibraryForClaude() {
   const lines = ['Foods already in my tracker (id — name):'];
   if (foods.length === 0) lines.push('(none yet)');
   for (const f of foods.slice().sort((a, b) => a.name.localeCompare(b.name))) {
-    lines.push(`${f.id} — ${f.name}`);
+    lines.push(`${f.id} — ${f.name}${f.unit === 'ml' ? ' (per 100 ml)' : ''}`);
   }
   lines.push('', 'Recipes already in my tracker (id — name):');
   if (recipes.length === 0) lines.push('(none yet)');
