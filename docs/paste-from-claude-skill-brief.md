@@ -290,7 +290,7 @@ library. That means an inconsistent vocabulary silently degrades the filter into
 
 Default to this small set, and reuse rather than invent:
 
-`protein` · `carbs` · `fats` · `dairy` · `breakfast` · `snack`
+`protein` · `carbs` · `fats` · `dairy` · `breakfast` · `snack` · `drinks`
 
 Add a new tag only when the user asks for one or it's clearly a recurring category for them.
 One to three tags per food. Tags are optional — an empty array or omitting the field is fine.
