@@ -55,13 +55,29 @@ backup by design, Home Screen installation is what makes local-only storage safe
 
 Per the brief's "don't invent values" rule (§11), almost nothing is pre-filled:
 
-- One food: Tia's Granola (the only food with fully confirmed label macros).
-- One body-weight entry: 68.2 kg on 22 Aug 2026.
-- Per-weekday calorie/protein targets exist as empty rows — set them in Settings.
+- One food: Tia's Granola (the only food with fully confirmed label macros). Shared between
+  both accounts.
+- One body-weight entry: 68.2 kg on 22 Aug 2026 — seeded only for the `yannick` account, since
+  it's a fact about him specifically.
+- Per-weekday calorie/protein targets exist as empty rows per account — set them in Settings.
 
 Everything else (weekday targets, date overrides for the Sept maintenance block, the rest
 of the food list, recipes) is entered by hand or via "Paste from Claude" once you know the
 real numbers.
+
+## Accounts
+
+Two accounts, `yannick` and `manshini`, share the same password. Foods and recipes are one
+shared library; log entries, daily targets, date overrides, and the body-weight log are kept
+separate per account (`js/db.js` routes each to its own IndexedDB database, `calorie-tracker-user-<name>`,
+while `foods`/`recipes` live in a shared `calorie-tracker-shared` database). A session persists
+in `localStorage` until "Log out" in Settings is used.
+
+**This is not real security.** The app is a static site with no backend (main brief §3), so
+there is no server to check a credential against — the check lives in `js/auth.js`, in plain
+JavaScript anyone can read via view-source. It exists to keep two people sharing a device from
+casually seeing each other's log, not to protect the data from a determined viewer. Don't put
+anything genuinely sensitive behind it.
 
 ## Architecture notes
 

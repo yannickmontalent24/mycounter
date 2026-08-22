@@ -1,10 +1,11 @@
 import * as db from './db.js';
-import { seedIfEmpty } from './seed.js';
+import { seedSharedIfEmpty, seedUserIfEmpty } from './seed.js';
 import {
   resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
   foodPortionMacros, recipePerGram, validateFood, validateRecipe, formatDateHeader,
 } from './logic.js';
 import { exportDay, exportRange, importFromClipboardText, ImportError } from './import-export.js';
+import { attemptLogin, getSessionUser, logout, accountLabel } from './auth.js';
 
 const WEEKDAY_ROWS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const WEEKDAY_LABELS = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
@@ -645,6 +646,7 @@ document.getElementById('export-range-btn').addEventListener('click', () => {
 
 // ==================== SETTINGS ====================
 function renderSettings() {
+  document.getElementById('account-current-user').textContent = accountLabel(sessionUser);
   const list = document.getElementById('weekday-targets-list');
   list.innerHTML = '';
   for (const wd of WEEKDAY_ROWS) {
@@ -777,6 +779,11 @@ document.getElementById('add-weight-btn').addEventListener('click', () => {
   });
 });
 
+document.getElementById('logout-btn').addEventListener('click', () => {
+  logout();
+  location.reload();
+});
+
 document.getElementById('export-all-btn').addEventListener('click', async () => {
   const [foods, recipes, logEntries, dayTargets, overrides, weightLog] = await Promise.all([
     db.getAll('foods'), db.getAll('recipes'), db.getAll('logEntries'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'), db.getAll('weightLog'),
@@ -801,12 +808,62 @@ document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target.id === 'modal-backdrop') closeModal();
 });
 
-// ==================== BOOT ====================
-async function boot() {
-  await seedIfEmpty();
+// ==================== LOGIN GATE ====================
+let sessionUser = null;
+let selectedLoginUser = null;
+
+function updateLoginSubmitEnabled() {
+  const password = document.getElementById('login-password').value;
+  document.getElementById('login-submit').disabled = !selectedLoginUser || !password;
+}
+
+document.querySelectorAll('.account-tile').forEach(tile => {
+  tile.addEventListener('click', () => {
+    selectedLoginUser = tile.dataset.user;
+    document.querySelectorAll('.account-tile').forEach(t => t.classList.toggle('selected', t === tile));
+    updateLoginSubmitEnabled();
+  });
+});
+document.getElementById('login-password').addEventListener('input', updateLoginSubmitEnabled);
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('login-submit').disabled) submitLogin();
+});
+document.getElementById('login-submit').addEventListener('click', submitLogin);
+
+function submitLogin() {
+  const password = document.getElementById('login-password').value;
+  const user = attemptLogin(selectedLoginUser, password);
+  const errorEl = document.getElementById('login-error');
+  if (!user) {
+    errorEl.hidden = false;
+    return;
+  }
+  errorEl.hidden = true;
+  unlockApp(user);
+}
+
+async function unlockApp(user) {
+  sessionUser = user;
+  db.setCurrentUser(user);
+  document.getElementById('login-screen').hidden = true;
+  document.getElementById('app').hidden = false;
+
+  await seedSharedIfEmpty();
+  await seedUserIfEmpty(user);
   await refreshCache();
   if (!location.hash) location.hash = 'today';
   renderRoute();
+}
+
+// ==================== BOOT ====================
+async function boot() {
+  const existingUser = getSessionUser();
+  if (existingUser) {
+    await unlockApp(existingUser);
+  } else {
+    document.getElementById('login-screen').hidden = false;
+    document.getElementById('login-password').focus();
+  }
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => { /* offline install will retry next online visit */ });

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Calorie &amp; Protein Tracker</title>
 <meta name="theme-color" content="#FAFAF7">
-<meta name="description" content="Single-user offline calorie and protein logging instrument.">
+<meta name="description" content="Offline calorie and protein logging instrument.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -15,7 +15,23 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div id="app">
+
+<div id="login-screen" class="login-screen" hidden>
+  <div class="login-card">
+    <div class="login-title">Calorie &amp; Protein Tracker</div>
+    <div class="login-sub">Sign in to continue</div>
+    <div class="account-picker" id="account-picker">
+      <button type="button" class="account-tile" data-user="yannick">Yannick</button>
+      <button type="button" class="account-tile" data-user="manshini">Manshini</button>
+    </div>
+    <label class="field-label" for="login-password">Password</label>
+    <input class="text-input" id="login-password" type="password" autocomplete="current-password" style="margin-bottom:12px;">
+    <div class="form-msg error" id="login-error" hidden>Incorrect username or password.</div>
+    <button type="button" class="primary-btn" id="login-submit" disabled>Unlock</button>
+  </div>
+</div>
+
+<div id="app" hidden>
 
   <main id="screen-today" class="screen" data-screen="today">
     <div class="screen-title-row">
@@ -149,6 +165,15 @@
       <div class="data-actions">
         <button type="button" class="secondary-btn" id="export-all-btn">Export all data (JSON)</button>
       </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="section-label" style="margin-bottom:10px;">Account</div>
+      <div class="weight-row" style="margin-bottom:10px;">
+        <span>Signed in as</span>
+        <span id="account-current-user"></span>
+      </div>
+      <button type="button" class="secondary-btn" id="logout-btn">Log out</button>
     </div>
   </main>
 
