@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// Paste this into Firebase console → Firestore Database → Rules → Publish.
+// This file is the source of truth; the console is just where it gets deployed.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Each person's log, targets, overrides, weight and metadata.
+    // Reachable only by that account — enforced here, on Google's servers, not in the browser.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // The foods and recipes library, deliberately shared between both accounts.
+    match /shared/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Anything not matched above is denied by default.
+  }
+}

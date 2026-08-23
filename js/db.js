@@ -1,115 +1,90 @@
-const SHARED_DB_NAME = 'calorie-tracker-shared';
-const DB_VERSION = 1;
+import { fs } from './firebase.js';
+import {
+  collection, doc, getDoc, getDocs, getDocsFromServer, setDoc, deleteDoc, query, where,
+} from '../vendor/firebase/firebase-firestore.js';
 
-// foods/recipes/meta are shared across accounts (one food library); everything that's
-// personal to a person's day (log entries, targets, weight) lives in a database scoped
-// to whichever account is currently logged in — see auth.js.
-const SHARED_STORES = new Set(['foods', 'recipes', 'meta']);
-const USER_STORES = new Set(['logEntries', 'dayTargets', 'dayTargetOverrides', 'weightLog']);
+// Foods and recipes are one library shared by both accounts; everything personal to a day
+// lives under that account's own uid and is unreachable by the other (enforced server-side
+// by firestore.rules, not by this code).
+const SHARED_STORES = new Set(['foods', 'recipes']);
+const USER_STORES = new Set(['logEntries', 'dayTargets', 'dayTargetOverrides', 'weightLog', 'meta']);
 
-let currentUser = null;
-export function setCurrentUser(user) {
-  currentUser = user;
+// Which field of each record is its document id.
+const KEY_FIELD = {
+  foods: 'id',
+  recipes: 'id',
+  logEntries: 'id',
+  dayTargets: 'weekday',
+  dayTargetOverrides: 'date',
+  weightLog: 'date',
+  meta: 'key',
+};
+
+let currentUid = null;
+export function setCurrentUser(uid) {
+  currentUid = uid;
 }
 
-const dbPromises = new Map();
-
-function userDbName(user) {
-  return `calorie-tracker-user-${user}`;
-}
-
-function openDb(dbName, isUserDb) {
-  if (dbPromises.has(dbName)) return dbPromises.get(dbName);
-  const p = new Promise((resolve, reject) => {
-    const req = indexedDB.open(dbName, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (isUserDb) {
-        if (!db.objectStoreNames.contains('logEntries')) {
-          const store = db.createObjectStore('logEntries', { keyPath: 'id' });
-          store.createIndex('date', 'date', { unique: false });
-        }
-        if (!db.objectStoreNames.contains('dayTargets')) db.createObjectStore('dayTargets', { keyPath: 'weekday' });
-        if (!db.objectStoreNames.contains('dayTargetOverrides')) db.createObjectStore('dayTargetOverrides', { keyPath: 'date' });
-        if (!db.objectStoreNames.contains('weightLog')) db.createObjectStore('weightLog', { keyPath: 'date' });
-      } else {
-        if (!db.objectStoreNames.contains('foods')) db.createObjectStore('foods', { keyPath: 'id' });
-        if (!db.objectStoreNames.contains('recipes')) db.createObjectStore('recipes', { keyPath: 'id' });
-        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  dbPromises.set(dbName, p);
-  return p;
-}
-
-function resolveDb(storeName) {
-  if (SHARED_STORES.has(storeName)) return openDb(SHARED_DB_NAME, false);
+function collRef(storeName) {
+  if (SHARED_STORES.has(storeName)) return collection(fs, 'shared', 'library', storeName);
   if (USER_STORES.has(storeName)) {
-    if (!currentUser) throw new Error(`No current user set (needed for store "${storeName}")`);
-    return openDb(userDbName(currentUser), true);
+    if (!currentUid) throw new Error(`Not signed in (needed for store "${storeName}")`);
+    return collection(fs, 'users', currentUid, storeName);
   }
   throw new Error(`Unknown store: ${storeName}`);
 }
 
-function tx(db, storeNames, mode) {
-  return db.transaction(storeNames, mode);
-}
-
-function reqToPromise(req) {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function docRef(storeName, key) {
+  return doc(collRef(storeName), String(key));
 }
 
 export async function getAll(storeName) {
-  const db = await resolveDb(storeName);
-  const store = tx(db, storeName, 'readonly').objectStore(storeName);
-  return reqToPromise(store.getAll());
+  const snap = await getDocs(collRef(storeName));
+  return snap.docs.map(d => d.data());
 }
 
 export async function get(storeName, key) {
-  const db = await resolveDb(storeName);
-  const store = tx(db, storeName, 'readonly').objectStore(storeName);
-  return reqToPromise(store.get(key));
+  const snap = await getDoc(docRef(storeName, key));
+  return snap.exists() ? snap.data() : undefined;
 }
 
 export async function put(storeName, value) {
-  const db = await resolveDb(storeName);
-  const store = tx(db, storeName, 'readwrite').objectStore(storeName);
-  await reqToPromise(store.put(value));
+  const key = value[KEY_FIELD[storeName]];
+  if (key == null || key === '') throw new Error(`Record for "${storeName}" is missing its ${KEY_FIELD[storeName]}`);
+  // Firestore rejects `undefined`; normalise to null so optional macros round-trip.
+  await setDoc(docRef(storeName, key), stripUndefined(value));
   return value;
 }
 
 export async function putAll(storeName, values) {
-  const db = await resolveDb(storeName);
-  const store = tx(db, storeName, 'readwrite').objectStore(storeName);
-  await Promise.all(values.map(v => reqToPromise(store.put(v))));
+  await Promise.all(values.map(v => put(storeName, v)));
 }
 
 export async function remove(storeName, key) {
-  const db = await resolveDb(storeName);
-  const store = tx(db, storeName, 'readwrite').objectStore(storeName);
-  await reqToPromise(store.delete(key));
+  await deleteDoc(docRef(storeName, key));
 }
 
 export async function count(storeName) {
-  const db = await resolveDb(storeName);
-  const store = tx(db, storeName, 'readonly').objectStore(storeName);
-  return reqToPromise(store.count());
+  const snap = await getDocs(collRef(storeName));
+  return snap.size;
 }
 
-// Range query on logEntries.date, e.g. entriesInRange('2026-08-22','2026-08-22') for a single day.
-// Scoped to the current user, since logEntries is a per-user store.
+// Seeding must never run off a cold local cache — an empty offline read would duplicate the
+// seed data that already exists on the server. Returns null when the server can't be reached,
+// which callers treat as "don't seed".
+export async function countFromServer(storeName) {
+  try {
+    const snap = await getDocsFromServer(collRef(storeName));
+    return snap.size;
+  } catch {
+    return null;
+  }
+}
+
 export async function entriesInRange(fromDate, toDate) {
-  const db = await resolveDb('logEntries');
-  const store = tx(db, 'logEntries', 'readonly').objectStore('logEntries');
-  const index = store.index('date');
-  const range = IDBKeyRange.bound(fromDate, toDate);
-  return reqToPromise(index.getAll(range));
+  const q = query(collRef('logEntries'), where('date', '>=', fromDate), where('date', '<=', toDate));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
 }
 
 export async function getMeta(key) {
@@ -119,4 +94,12 @@ export async function getMeta(key) {
 
 export async function setMeta(key, value) {
   return put('meta', { key, value });
+}
+
+function stripUndefined(value) {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, v === undefined ? null : stripUndefined(v)]));
+  }
+  return value === undefined ? null : value;
 }

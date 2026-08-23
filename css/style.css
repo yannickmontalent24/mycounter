@@ -760,28 +760,27 @@ a { color: var(--navy); }
   margin-bottom: 22px;
 }
 
-.account-picker {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 18px;
+.login-note {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 14px;
+  text-align: center;
 }
 
-.account-tile {
-  flex: 1;
-  height: 52px;
+.sync-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
   border: 1px solid var(--control-border);
-  background: var(--surface-raised);
-  border-radius: 14px;
-  font-size: 0.9375rem;
-  font-weight: 500;
-  color: var(--navy);
+  border-radius: 8px;
+  padding: 4px 8px;
+  white-space: nowrap;
 }
-.account-tile:hover { background: #F0EFEA; }
-.account-tile.selected {
-  background: var(--navy);
-  color: var(--surface);
-  border-color: var(--navy);
-  font-weight: 600;
+.sync-badge.offline {
+  color: var(--amber);
+  background: var(--amber-tint-bg);
+  border-color: var(--amber-tint-border);
 }
 
 /* Focus */

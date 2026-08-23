@@ -1,9 +1,8 @@
-import { count, putAll, getMeta, setMeta } from './db.js';
+import { countFromServer, putAll } from './db.js';
 import { WEEKDAYS } from './logic.js';
 
 // Only fully-known facts get seeded (main brief §11: undetermined inputs must not be
 // invented). Weekday kcal/protein targets are left null — the user enters them in Settings.
-// The food library is shared across accounts, seeded once regardless of who logs in first.
 const SEED_FOODS = [
   {
     id: 'granola-tias-gold',
@@ -11,35 +10,22 @@ const SEED_FOODS = [
     per100g: { kcal: 491, protein: 22, carbs: null, fat: null, fibre: 10 },
     defaultPortionG: 50,
     source: 'label',
+    unit: 'g',
     tags: ['breakfast'],
   },
 ];
 
-// This 68.2kg entry is a fact about yannick specifically (main brief §2) — it must not be
-// seeded into manshini's separate weight log, which has no established starting facts.
-const YANNICK_SEED_WEIGHT = [
-  { date: '2026-08-22', kg: 68.2 },
-];
-
+// Every seed check asks the server, never the local cache. A cold cache on a new device reads
+// as empty, which would otherwise re-seed data that already exists and create duplicates.
+// A null count means the server was unreachable — in that case seed nothing.
 export async function seedSharedIfEmpty() {
-  const already = await getMeta('shared-seeded');
-  if (already) return;
-  if ((await count('foods')) === 0) {
-    await putAll('foods', SEED_FOODS);
-  }
-  await setMeta('shared-seeded', true);
+  const foods = await countFromServer('foods');
+  if (foods === null || foods > 0) return;
+  await putAll('foods', SEED_FOODS);
 }
 
-export async function seedUserIfEmpty(user) {
-  const key = `user-seeded-${user}`;
-  const already = await getMeta(key);
-  if (already) return;
-
-  if ((await count('dayTargets')) === 0) {
-    await putAll('dayTargets', WEEKDAYS.map(weekday => ({ weekday, kcal: null, protein: null })));
-  }
-  if (user === 'yannick' && (await count('weightLog')) === 0) {
-    await putAll('weightLog', YANNICK_SEED_WEIGHT);
-  }
-  await setMeta(key, true);
+export async function seedUserIfEmpty() {
+  const targets = await countFromServer('dayTargets');
+  if (targets === null || targets > 0) return;
+  await putAll('dayTargets', WEEKDAYS.map(weekday => ({ weekday, kcal: null, protein: null })));
 }

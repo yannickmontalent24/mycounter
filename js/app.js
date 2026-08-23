@@ -8,7 +8,8 @@ import {
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
 } from './import-export.js';
-import { attemptLogin, getSessionUser, logout, accountLabel } from './auth.js';
+import { login, logout, onUserChanged, accountLabel, friendlyAuthError } from './auth.js';
+import { findLegacyData, uploadShared, uploadAccount, alreadyMigrated, markMigrated } from './migrate.js';
 
 const WEEKDAY_ROWS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const WEEKDAY_LABELS = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
@@ -989,6 +990,7 @@ document.getElementById('export-range-btn').addEventListener('click', () => {
 // ==================== SETTINGS ====================
 function renderSettings() {
   document.getElementById('account-current-user').textContent = accountLabel(sessionUser);
+  renderSyncStatus();
   const list = document.getElementById('weekday-targets-list');
   list.innerHTML = '';
   for (const wd of WEEKDAY_ROWS) {
@@ -1121,9 +1123,9 @@ document.getElementById('add-weight-btn').addEventListener('click', () => {
   });
 });
 
-document.getElementById('logout-btn').addEventListener('click', () => {
-  logout();
-  location.reload();
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await logout();
+  // onUserChanged puts the login screen back up.
 });
 
 document.getElementById('export-all-btn').addEventListener('click', async () => {
@@ -1152,60 +1154,171 @@ document.getElementById('modal-backdrop').addEventListener('click', e => {
 
 // ==================== LOGIN GATE ====================
 let sessionUser = null;
-let selectedLoginUser = null;
+
+const emailInput = document.getElementById('login-email');
+const passwordInput = document.getElementById('login-password');
+const submitBtn = document.getElementById('login-submit');
 
 function updateLoginSubmitEnabled() {
-  const password = document.getElementById('login-password').value;
-  document.getElementById('login-submit').disabled = !selectedLoginUser || !password;
+  submitBtn.disabled = !emailInput.value.trim() || !passwordInput.value;
 }
-
-document.querySelectorAll('.account-tile').forEach(tile => {
-  tile.addEventListener('click', () => {
-    selectedLoginUser = tile.dataset.user;
-    document.querySelectorAll('.account-tile').forEach(t => t.classList.toggle('selected', t === tile));
-    updateLoginSubmitEnabled();
+emailInput.addEventListener('input', updateLoginSubmitEnabled);
+passwordInput.addEventListener('input', updateLoginSubmitEnabled);
+for (const field of [emailInput, passwordInput]) {
+  field.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !submitBtn.disabled) submitLogin();
   });
-});
-document.getElementById('login-password').addEventListener('input', updateLoginSubmitEnabled);
-document.getElementById('login-password').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !document.getElementById('login-submit').disabled) submitLogin();
-});
-document.getElementById('login-submit').addEventListener('click', submitLogin);
+}
+submitBtn.addEventListener('click', submitLogin);
 
-function submitLogin() {
-  const password = document.getElementById('login-password').value;
-  const user = attemptLogin(selectedLoginUser, password);
+async function submitLogin() {
   const errorEl = document.getElementById('login-error');
-  if (!user) {
-    errorEl.hidden = false;
-    return;
-  }
   errorEl.hidden = true;
-  unlockApp(user);
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Signing in…';
+  try {
+    await login(emailInput.value, passwordInput.value);
+    // onUserChanged drives the unlock, so nothing more to do here.
+  } catch (err) {
+    errorEl.textContent = friendlyAuthError(err);
+    errorEl.hidden = false;
+    submitBtn.textContent = 'Sign in';
+    updateLoginSubmitEnabled();
+  }
 }
 
 async function unlockApp(user) {
   sessionUser = user;
-  db.setCurrentUser(user);
+  db.setCurrentUser(user.uid);
   document.getElementById('login-screen').hidden = true;
   document.getElementById('app').hidden = false;
+  passwordInput.value = '';
 
   await seedSharedIfEmpty();
-  await seedUserIfEmpty(user);
+  await seedUserIfEmpty();
+  await maybeOfferMigration();
   await refreshCache();
   if (!location.hash) location.hash = 'today';
   renderRoute();
 }
 
-// ==================== BOOT ====================
-async function boot() {
-  const existingUser = getSessionUser();
-  if (existingUser) {
-    await unlockApp(existingUser);
-  } else {
-    document.getElementById('login-screen').hidden = false;
-    document.getElementById('login-password').focus();
+function showLoginScreen() {
+  sessionUser = null;
+  db.setCurrentUser(null);
+  document.getElementById('app').hidden = true;
+  document.getElementById('login-screen').hidden = false;
+  submitBtn.textContent = 'Sign in';
+  updateLoginSubmitEnabled();
+}
+
+// ==================== MIGRATION FROM THE LOCAL-ONLY BUILD ====================
+// Offered once per account, and only ever additive — the old local data is never deleted, so
+// a failed or declined upload leaves the previous build's copy intact on the device.
+async function maybeOfferMigration() {
+  try {
+    if (await alreadyMigrated()) return;
+    const legacy = await findLegacyData();
+    if (!legacy.hasAnything) { await markMigrated(); return; }
+
+    const accountRows = legacy.accounts.map(a => `
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--hairline);">
+        <input type="checkbox" data-legacy-account="${escapeHtml(a.name)}" ${legacy.accounts.length === 1 ? 'checked' : ''}>
+        <span style="flex:1;">
+          <span style="font-size:0.9375rem; font-weight:500;">${escapeHtml(a.name)}</span>
+          <span style="display:block; font-family:var(--font-mono); font-size:0.6875rem; color:var(--text-secondary);">
+            ${a.logEntries.length} entries · ${a.weightLog.length} weights
+          </span>
+        </span>
+      </label>
+    `).join('');
+
+    openModal(`
+      <h2>Bring your existing data across</h2>
+      <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">
+        Found data saved on this device by the previous version. Upload it to your account so it
+        syncs to your other devices? Nothing on this device is deleted either way.
+      </p>
+      <div class="weight-row" style="border-bottom:1px solid var(--hairline);">
+        <span>Foods &amp; recipes</span>
+        <span>${legacy.foods.length} + ${legacy.recipes.length}</span>
+      </div>
+      ${accountRows ? `<div style="margin-top:6px;">${accountRows}</div>` : ''}
+      <p style="font-size:0.75rem; color:var(--text-secondary);">
+        Tick only the daily log that belongs to <strong>${escapeHtml(accountLabel(sessionUser))}</strong>.
+        Anything else should be uploaded by that person from their own account.
+      </p>
+      <div class="form-msg error" id="mig-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="mig-skip">Not now</button>
+        <button type="button" class="primary-btn" id="mig-go">Upload</button>
+      </div>
+    `);
+
+    await new Promise(resolve => {
+      document.getElementById('mig-skip').addEventListener('click', () => { closeModal(); resolve(); });
+      document.getElementById('mig-go').addEventListener('click', async () => {
+        const btn = document.getElementById('mig-go');
+        btn.disabled = true;
+        btn.textContent = 'Uploading…';
+        try {
+          const chosen = [...document.querySelectorAll('[data-legacy-account]')]
+            .filter(cb => cb.checked)
+            .map(cb => legacy.accounts.find(a => a.name === cb.dataset.legacyAccount));
+          const sharedResult = await uploadShared(legacy);
+          let entries = 0;
+          for (const account of chosen) {
+            const r = await uploadAccount(account);
+            entries += r.logEntries;
+          }
+          await markMigrated();
+          closeModal();
+          toast(`Uploaded ${sharedResult.foods} foods, ${entries} entries`);
+          resolve();
+        } catch (err) {
+          const errEl = document.getElementById('mig-error');
+          errEl.textContent = 'Upload failed — your local data is untouched. Try again later from Settings.';
+          errEl.hidden = false;
+          btn.disabled = false;
+          btn.textContent = 'Upload';
+        }
+      });
+    });
+  } catch {
+    // Migration is a convenience; never let it block getting into the app.
   }
+}
+
+// ==================== CONNECTION STATUS ====================
+function renderSyncStatus() {
+  const badge = document.getElementById('sync-badge');
+  if (!badge) return;
+  const online = navigator.onLine;
+  badge.textContent = online ? 'synced' : 'offline — will sync';
+  badge.classList.toggle('offline', !online);
+}
+window.addEventListener('online', renderSyncStatus);
+window.addEventListener('offline', renderSyncStatus);
+
+// ==================== BOOT ====================
+function boot() {
+  renderSyncStatus();
+
+  // Firebase restores the previous session asynchronously, so the app unlocks from here
+  // rather than from the sign-in button.
+  onUserChanged(async user => {
+    if (user) {
+      try {
+        await unlockApp(user);
+      } catch (err) {
+        const errorEl = document.getElementById('login-error');
+        showLoginScreen();
+        errorEl.textContent = 'Signed in, but could not load your data. Check your connection and try again.';
+        errorEl.hidden = false;
+      }
+    } else {
+      showLoginScreen();
+    }
+  });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => { /* offline install will retry next online visit */ });

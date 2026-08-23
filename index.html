@@ -20,14 +20,13 @@
   <div class="login-card">
     <div class="login-title">Calorie &amp; Protein Tracker</div>
     <div class="login-sub">Sign in to continue</div>
-    <div class="account-picker" id="account-picker">
-      <button type="button" class="account-tile" data-user="yannick">Yannick</button>
-      <button type="button" class="account-tile" data-user="manshini">Manshini</button>
-    </div>
+    <label class="field-label" for="login-email">Email</label>
+    <input class="text-input" id="login-email" type="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" style="margin-bottom:12px;">
     <label class="field-label" for="login-password">Password</label>
     <input class="text-input" id="login-password" type="password" autocomplete="current-password" style="margin-bottom:12px;">
-    <div class="form-msg error" id="login-error" hidden>Incorrect username or password.</div>
-    <button type="button" class="primary-btn" id="login-submit" disabled>Unlock</button>
+    <div class="form-msg error" id="login-error" hidden></div>
+    <button type="button" class="primary-btn" id="login-submit" disabled>Sign in</button>
+    <div class="login-note" id="login-note">Signing in for the first time on a device needs a connection. After that the app works offline.</div>
   </div>
 </div>
 
@@ -174,6 +173,10 @@
       <div class="weight-row" style="margin-bottom:10px;">
         <span>Signed in as</span>
         <span id="account-current-user"></span>
+      </div>
+      <div class="weight-row" style="margin-bottom:10px;">
+        <span>Connection</span>
+        <span class="sync-badge" id="sync-badge">synced</span>
       </div>
       <button type="button" class="secondary-btn" id="logout-btn">Log out</button>
     </div>

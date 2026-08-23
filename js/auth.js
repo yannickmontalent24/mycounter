@@ -1,32 +1,47 @@
-// Client-side account gate only — this is a static, backend-less PWA (main brief §3), so
-// there is no server to verify a real credential against. This does not protect the data
-// from anyone who can read the source; it exists to keep the two people using this on a
-// shared device from casually seeing each other's log/targets/weight, not as real auth.
-const ACCOUNTS = {
-  yannick: 'Mycounter@01',
-  manshini: 'Mycounter@01',
-};
+import { auth } from './firebase.js';
+import {
+  signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged,
+  setPersistence, browserLocalPersistence,
+} from '../vendor/firebase/firebase-auth.js';
 
-const SESSION_KEY = 'calorie-tracker-session-user';
+// Real, server-enforced sign-in. The previous version compared a password in client-side
+// JavaScript, which protected nothing once the data left the device — anyone could read it
+// via view-source. Firestore rules now decide what each signed-in uid may touch.
 
-export function attemptLogin(username, password) {
-  const key = username.trim().toLowerCase();
-  if (ACCOUNTS[key] && ACCOUNTS[key] === password) {
-    localStorage.setItem(SESSION_KEY, key);
-    return key;
-  }
-  return null;
-}
+// Stay signed in across launches until the user explicitly logs out.
+const persistenceReady = setPersistence(auth, browserLocalPersistence).catch(() => {});
 
-export function getSessionUser() {
-  const user = localStorage.getItem(SESSION_KEY);
-  return ACCOUNTS[user] ? user : null;
+export async function login(email, password) {
+  await persistenceReady;
+  const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return credential.user;
 }
 
 export function logout() {
-  localStorage.removeItem(SESSION_KEY);
+  return fbSignOut(auth);
+}
+
+export function onUserChanged(callback) {
+  return onAuthStateChanged(auth, callback);
 }
 
 export function accountLabel(user) {
-  return user === 'yannick' ? 'Yannick' : user === 'manshini' ? 'Manshini' : user;
+  if (!user) return '';
+  if (user.displayName) return user.displayName;
+  const local = (user.email ?? '').split('@')[0];
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : user.email ?? '';
+}
+
+// Firebase's error codes are not something to show a person at a kitchen counter.
+export function friendlyAuthError(err) {
+  switch (err?.code) {
+    case 'auth/invalid-email': return 'That email address doesn’t look right.';
+    case 'auth/user-disabled': return 'That account has been disabled.';
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'Email or password not recognised.';
+    case 'auth/too-many-requests': return 'Too many attempts. Wait a minute and try again.';
+    case 'auth/network-request-failed': return 'No connection — you need to be online to sign in the first time.';
+    default: return 'Could not sign in. Please try again.';
+  }
 }
