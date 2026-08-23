@@ -526,6 +526,20 @@ a { color: var(--navy); }
 
 .quick-add-row .name { color: var(--teal); font-weight: 600; }
 
+.recipe-tag {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--teal);
+  background: var(--teal-badge-bg);
+  border: 1px solid var(--teal-tint-border);
+  border-radius: 8px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
 .legend {
   margin-top: 18px;
   font-family: var(--font-mono);

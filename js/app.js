@@ -84,8 +84,9 @@ async function refreshCache() {
   const recent = await db.entriesInRange(isoDaysAgo(60), todayISO());
   const freq = new Map();
   for (const e of recent) {
-    if (!e.foodId) continue;
-    freq.set(e.foodId, (freq.get(e.foodId) ?? 0) + 1);
+    const key = e.foodId ? `food:${e.foodId}` : (e.recipeId ? `recipe:${e.recipeId}` : null);
+    if (!key) continue;
+    freq.set(key, (freq.get(key) ?? 0) + 1);
   }
   cache.foodFrequency = freq;
 }
@@ -213,11 +214,35 @@ document.getElementById('export-day-btn').addEventListener('click', async () => 
 });
 
 // ==================== LOG ENTRY ====================
-const logState = { query: '', pickedId: null, grams: '' };
+const logState = { query: '', pickedId: null, pickedKind: null, grams: '' };
+
+function pickedRecord() {
+  if (!logState.pickedId) return null;
+  return logState.pickedKind === 'recipe'
+    ? recipesById().get(logState.pickedId)
+    : foodsById().get(logState.pickedId);
+}
 
 function currentLogUnit() {
-  const picked = logState.pickedId ? foodsById().get(logState.pickedId) : null;
-  return unitOf(picked);
+  // A batch is weighed, so recipe amounts are always grams.
+  if (logState.pickedKind === 'recipe') return 'g';
+  return unitOf(pickedRecord());
+}
+
+// Per-100 g figures for a recipe, so a weighed plateful can be sanity-checked.
+// Returns null when an ingredient food is missing or the batch isn't weighed yet.
+function recipePer100(recipe) {
+  if (isDraftRecipe(recipe)) return null;
+  try {
+    const perGram = recipePerGram(recipe, foodsById());
+    return { kcal: Math.round(perGram.kcal * 100), protein: Math.round(perGram.protein * 100) };
+  } catch {
+    return null;
+  }
+}
+
+function onePortionGrams(recipe) {
+  return Math.round(recipe.cookedWeightG / recipe.portions);
 }
 
 function renderLog() {
@@ -238,16 +263,24 @@ function renderLog() {
 
 function renderLogResults() {
   const q = logState.query.trim().toLowerCase();
-  const matches = cache.foods.filter(f => !q || f.name.toLowerCase().includes(q));
+
+  // Recipes are logged from here too, so a weighed plateful can be entered in grams rather
+  // than assuming you ate exactly one equal share of the batch. Drafts are excluded — their
+  // macros can't be resolved until the batch has been weighed.
+  const candidates = [
+    ...cache.foods.map(f => ({ kind: 'food', record: f })),
+    ...cache.recipes.filter(r => !isDraftRecipe(r)).map(r => ({ kind: 'recipe', record: r })),
+  ].filter(c => !q || c.record.name.toLowerCase().includes(q));
 
   // With no search term, lead with what actually gets eaten most — usually this means logging
-  // needs no typing at all. Within a search, keep frequent foods first too.
+  // needs no typing at all. Within a search, keep frequent items first too.
   const freq = cache.foodFrequency;
-  matches.sort((a, b) => {
-    const diff = (freq.get(b.id) ?? 0) - (freq.get(a.id) ?? 0);
-    return diff !== 0 ? diff : a.name.localeCompare(b.name);
+  const freqOf = c => freq.get(`${c.kind}:${c.record.id}`) ?? 0;
+  candidates.sort((a, b) => {
+    const diff = freqOf(b) - freqOf(a);
+    return diff !== 0 ? diff : a.record.name.localeCompare(b.record.name);
   });
-  const results = matches.slice(0, 4);
+  const results = candidates.slice(0, 4);
 
   const hintEl = document.getElementById('log-results-hint');
   const showHint = !q && results.length > 0 && [...freq.values()].some(v => v > 0);
@@ -255,17 +288,26 @@ function renderLogResults() {
 
   const container = document.getElementById('log-search-results');
   container.innerHTML = '';
-  for (const f of results) {
+  for (const { kind, record } of results) {
+    let per100Text;
+    if (kind === 'recipe') {
+      const per100 = recipePer100(record);
+      per100Text = per100 ? `${per100.kcal} kcal · ${per100.protein} g /100g` : 'unavailable';
+    } else {
+      per100Text = `${record.per100g.kcal} kcal · ${record.per100g.protein} g /100${unitOf(record)}`;
+    }
+    const selected = logState.pickedId === record.id && logState.pickedKind === kind;
     const btn = el(`
       <button type="button" class="search-result-btn">
-        <span class="name">${escapeHtml(f.name)}</span>
-        <span class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100${unitOf(f)}</span>
-        <span class="check">${logState.pickedId === f.id ? '●' : '○'}</span>
+        <span class="name">${escapeHtml(record.name)}${kind === 'recipe' ? ' <span class="recipe-tag">recipe</span>' : ''}</span>
+        <span class="per100">${per100Text}</span>
+        <span class="check">${selected ? '●' : '○'}</span>
       </button>
     `);
     btn.addEventListener('click', () => {
-      logState.pickedId = f.id;
-      logState.grams = String(f.defaultPortionG ?? 100);
+      logState.pickedId = record.id;
+      logState.pickedKind = kind;
+      logState.grams = String(kind === 'recipe' ? onePortionGrams(record) : (record.defaultPortionG ?? 100));
       renderLog();
     });
     container.appendChild(btn);
@@ -372,16 +414,28 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
 }
 
 function renderLogDraft() {
-  const picked = logState.pickedId ? foodsById().get(logState.pickedId) : null;
+  const picked = pickedRecord();
   const nameEl = document.getElementById('log-draft-name');
   const macrosEl = document.getElementById('log-draft-macros');
   if (!picked) {
-    nameEl.textContent = 'No food selected';
+    nameEl.textContent = 'Nothing selected';
     macrosEl.textContent = '—';
     return;
   }
-  nameEl.textContent = picked.name;
   const grams = parseInt(logState.grams, 10) || 0;
+  if (logState.pickedKind === 'recipe') {
+    const portion = onePortionGrams(picked);
+    // Name the batch's own share so an odd weight is obviously deliberate, not a mistake.
+    nameEl.textContent = `${picked.name} (1 portion = ${portion} g)`;
+    try {
+      const m = recipePortionMacros(picked, foodsById(), grams);
+      macrosEl.textContent = `${m.kcal} kcal · ${m.protein} g`;
+    } catch {
+      macrosEl.textContent = 'missing ingredient';
+    }
+    return;
+  }
+  nameEl.textContent = picked.name;
   const m = foodPortionMacros(picked, grams);
   macrosEl.textContent = `${m.kcal} kcal · ${m.protein} g`;
 }
@@ -412,10 +466,15 @@ document.getElementById('gramsfield').addEventListener('input', e => {
 document.getElementById('confirm-log-btn').addEventListener('click', async () => {
   const grams = parseInt(logState.grams, 10) || 0;
   if (!logState.pickedId || !grams) return;
+  const isRecipe = logState.pickedKind === 'recipe';
   await db.put('logEntries', {
-    id: crypto.randomUUID(), date: todayISO(), foodId: logState.pickedId, recipeId: null, grams,
+    id: crypto.randomUUID(),
+    date: todayISO(),
+    foodId: isRecipe ? null : logState.pickedId,
+    recipeId: isRecipe ? logState.pickedId : null,
+    grams,
   });
-  logState.query = ''; logState.pickedId = null; logState.grams = '';
+  logState.query = ''; logState.pickedId = null; logState.pickedKind = null; logState.grams = '';
   goTo('today');
 });
 
@@ -708,7 +767,9 @@ function renderRecipes() {
       try {
         const perGram = recipePerGram(r, fMap);
         const grams = r.cookedWeightG / r.portions;
-        perPortionText = `${Math.round(perGram.kcal * grams)} kcal · ${Math.round(perGram.protein * grams)} g / portion`;
+        // Per-100 g matters as much as per-portion now that any weighed amount can be logged.
+        perPortionText = `${Math.round(perGram.kcal * grams)} kcal · ${Math.round(perGram.protein * grams)} g / portion`
+          + ` · ${Math.round(perGram.kcal * 100)} kcal /100g`;
       } catch {
         perPortionText = 'Missing an ingredient food';
       }
@@ -725,10 +786,15 @@ function renderRecipes() {
             <button type="button" class="icon-btn-small" data-delete-recipe="${r.id}" aria-label="Delete ${escapeHtml(r.name)}">×</button>
           </div>
         </div>
-        <div style="display:flex; gap:8px; margin:6px 0 14px;">
+        <div style="display:flex; gap:8px; margin:6px 0 6px;">
           <button type="button" class="secondary-btn" data-log-recipe="${r.id}" ${draft ? 'disabled' : ''} style="text-align:center;${draft ? 'opacity:0.5;' : ''}">
-            ${draft ? 'Add cooked weight to log' : 'Log a portion'}
+            ${draft ? 'Add cooked weight to log' : `Log 1 portion (${onePortionGrams(r)} g)`}
           </button>
+          <button type="button" class="secondary-btn" data-weigh-recipe="${r.id}" ${draft ? 'disabled' : ''} style="text-align:center;${draft ? 'opacity:0.5;' : ''}">
+            Weigh a portion
+          </button>
+        </div>
+        <div style="margin:0 0 14px;">
           <button type="button" class="secondary-btn" data-cook-again="${r.id}" style="text-align:center;">Cook this again</button>
         </div>
       </div>
@@ -742,6 +808,19 @@ function renderRecipes() {
       const grams = Math.round(recipe.cookedWeightG / recipe.portions);
       await db.put('logEntries', { id: crypto.randomUUID(), date: todayISO(), foodId: null, recipeId: recipe.id, grams });
       goTo('today');
+    });
+  });
+  // Sends you to the amount screen with the recipe selected and one portion pre-filled, so you
+  // can dial in whatever you actually weighed out.
+  list.querySelectorAll('[data-weigh-recipe]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const recipe = recipesById().get(btn.dataset.weighRecipe);
+      if (!recipe || isDraftRecipe(recipe)) return;
+      logState.query = '';
+      logState.pickedId = recipe.id;
+      logState.pickedKind = 'recipe';
+      logState.grams = String(onePortionGrams(recipe));
+      goTo('log');
     });
   });
   list.querySelectorAll('[data-cook-again]').forEach(btn => {

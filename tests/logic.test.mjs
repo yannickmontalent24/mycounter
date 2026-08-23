@@ -52,6 +52,26 @@ test('cooked-weight: portion macros scale from cooked grams logged', () => {
   assert.equal(portion.protein, Math.round(144 / 4));
 });
 
+test('cooked-weight: an arbitrary weighed amount scales per gram, not per equal share', () => {
+  // 600 g raw chicken -> 1420 g cooked, nominally 4 portions of 355 g. Weighing out 500 g
+  // must give 500/1420 of the batch, not one quarter of it.
+  const foods = new Map([
+    ['chicken-raw', { id: 'chicken-raw', per100g: { kcal: 106, protein: 24, carbs: null, fat: null, fibre: null } }],
+  ]);
+  const recipe = { id: 'batch-a', ingredients: [{ foodId: 'chicken-raw', grams: 600 }], cookedWeightG: 1420, portions: 4 };
+
+  const weighed = recipePortionMacros(recipe, foods, 500);
+  const batchKcal = 106 * 6;
+  assert.equal(weighed.kcal, Math.round(batchKcal * (500 / 1420)));
+
+  const onePortion = recipePortionMacros(recipe, foods, 355);
+  assert.notEqual(weighed.kcal, onePortion.kcal, 'a 500 g plate is not one 355 g portion');
+
+  // And two different weights must differ proportionally.
+  const half = recipePortionMacros(recipe, foods, 250);
+  assert.equal(half.kcal, Math.round(batchKcal * (250 / 1420)));
+});
+
 test('cooked-weight: multi-ingredient recipe sums raw macros before dividing by cooked weight', () => {
   const foods = new Map([
     ['rice-dry', { id: 'rice-dry', per100g: { kcal: 349, protein: 8.1, carbs: null, fat: null, fibre: null } }],
