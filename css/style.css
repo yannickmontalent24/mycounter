@@ -654,6 +654,104 @@ a { color: var(--navy); }
 }
 .icon-btn-small:hover { background: var(--surface-sunken); }
 
+/* Workouts */
+.exercise-card {
+  border: 1px solid var(--navy-tint-border);
+  background: linear-gradient(#F2F6FD, #E6EDFA);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.exercise-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.exercise-index {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.exercise-name {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.exercise-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  background: var(--surface-raised);
+}
+
+/* The one thing that has to be readable at arm's length mid-set. */
+.exercise-sets {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--navy-tint-border-2);
+  margin-bottom: 10px;
+}
+
+.sets-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.sets-value {
+  flex: 1;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+.exercise-instructions {
+  margin: 0 0 10px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--navy);
+}
+
+.exercise-other-weeks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.other-week {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--navy-tint-border);
+  border-radius: 8px;
+  padding: 3px 7px;
+}
+
 /* History */
 .history-list { display: flex; flex-direction: column; gap: 10px; }
 

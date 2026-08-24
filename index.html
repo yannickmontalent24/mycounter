@@ -135,7 +135,23 @@
     <div class="entry-list" id="recipes-list"></div>
   </main>
 
+  <main id="screen-workouts" class="screen" data-screen="workouts" hidden>
+    <div class="screen-title-row">
+      <h1 class="screen-title">Workouts</h1>
+      <div class="date-chip" id="workout-phase-chip"></div>
+    </div>
+
+    <div class="section-label" style="margin-bottom:8px;">Week</div>
+    <div class="tag-chips" id="workout-week-chips"></div>
+
+    <div class="section-label" style="margin-bottom:8px;">Session</div>
+    <div class="tag-chips" id="workout-day-chips"></div>
+
+    <div id="workout-exercises"></div>
+  </main>
+
   <main id="screen-history" class="screen" data-screen="history" hidden>
+    <button type="button" class="link-btn" id="history-back" style="margin-bottom:10px;">← Back to settings</button>
     <div class="screen-title-row">
       <h1 class="screen-title">History</h1>
       <div class="readonly-badge">read only</div>
@@ -167,6 +183,7 @@
     <div class="settings-section">
       <div class="section-label" style="margin-bottom:10px;">Data</div>
       <div class="data-actions">
+        <button type="button" class="secondary-btn" id="open-history-btn">View history</button>
         <button type="button" class="secondary-btn" id="export-all-btn">Export all data (JSON)</button>
       </div>
     </div>
@@ -198,8 +215,8 @@
     <button type="button" class="tab-btn" data-go="recipes" aria-label="Recipes">
       <span class="icon" aria-hidden="true">⊞</span><span>Recipes</span><span class="indicator" aria-hidden="true"></span>
     </button>
-    <button type="button" class="tab-btn" data-go="history" aria-label="History">
-      <span class="icon" aria-hidden="true">↺</span><span>History</span><span class="indicator" aria-hidden="true"></span>
+    <button type="button" class="tab-btn" data-go="workouts" aria-label="Workouts">
+      <span class="icon" aria-hidden="true">◫</span><span>Gym</span><span class="indicator" aria-hidden="true"></span>
     </button>
     <button type="button" class="tab-btn" data-go="settings" aria-label="Settings">
       <span class="icon" aria-hidden="true">⚙</span><span>Settings</span><span class="indicator" aria-hidden="true"></span>

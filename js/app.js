@@ -11,6 +11,7 @@ import {
 } from './import-export.js';
 import { login, logout, onUserChanged, accountLabel, friendlyAuthError } from './auth.js';
 import { findLegacyData, uploadShared, uploadAccount, alreadyMigrated, markMigrated } from './migrate.js';
+import { PHASES, activePhase, weekNumberFor, defaultDayIndex } from './workouts.js';
 
 const WEEKDAY_ROWS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const WEEKDAY_LABELS = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
@@ -96,7 +97,7 @@ function foodsById() { return new Map(cache.foods.map(f => [f.id, f])); }
 function recipesById() { return new Map(cache.recipes.map(r => [r.id, r])); }
 
 // ---- Routing ----
-const SCREENS = ['today', 'log', 'foods', 'recipes', 'history', 'settings'];
+const SCREENS = ['today', 'log', 'foods', 'recipes', 'workouts', 'history', 'settings'];
 
 function currentScreenFromHash() {
   const h = location.hash.replace('#', '');
@@ -112,12 +113,18 @@ function renderRoute() {
   for (const s of SCREENS) {
     document.getElementById(`screen-${s}`).hidden = s !== screen;
   }
+  // History no longer has a tab of its own — it sits under Settings, so Settings stays lit
+  // while it's open rather than leaving no tab highlighted at all.
+  const tabForScreen = screen === 'history' ? 'settings' : screen;
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    const active = btn.dataset.go === screen;
+    const active = btn.dataset.go === tabForScreen;
     btn.classList.toggle('active', active);
     btn.querySelector('.indicator').textContent = active ? '━' : '';
   });
-  const renderers = { today: renderToday, log: renderLog, foods: renderFoods, recipes: renderRecipes, history: renderHistory, settings: renderSettings };
+  const renderers = {
+    today: renderToday, log: renderLog, foods: renderFoods, recipes: renderRecipes,
+    workouts: renderWorkouts, history: renderHistory, settings: renderSettings,
+  };
   renderers[screen]();
 }
 
@@ -1263,6 +1270,84 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
   });
 }
 
+// ==================== WORKOUTS ====================
+// Week and session default to where the calendar actually is, so opening this at the gym
+// shows today's numbers without touching anything. Both stay overridable.
+const workoutState = { weekOverride: null, dayOverride: null };
+
+function renderWorkouts() {
+  const today = todayISO();
+  const phase = activePhase(PHASES, today);
+  if (!phase) return;
+
+  const currentWeek = weekNumberFor(phase, today);
+  const week = workoutState.weekOverride ?? currentWeek;
+  const dayIndex = workoutState.dayOverride ?? defaultDayIndex(phase, today);
+  const day = phase.days[dayIndex];
+
+  document.getElementById('workout-phase-chip').textContent = phase.name;
+
+  const weekChips = document.getElementById('workout-week-chips');
+  weekChips.innerHTML = '';
+  for (let w = 1; w <= phase.weeks; w++) {
+    const isNow = w === currentWeek;
+    const chip = el(`<button type="button" class="tag-chip">Week ${w}${isNow ? ' · now' : ''}</button>`);
+    const active = w === week;
+    chip.style.background = active ? 'var(--navy)' : 'var(--surface-raised)';
+    chip.style.color = active ? 'var(--surface)' : 'var(--navy)';
+    chip.style.borderColor = 'var(--navy)';
+    chip.addEventListener('click', () => { workoutState.weekOverride = w; renderWorkouts(); });
+    weekChips.appendChild(chip);
+  }
+
+  const dayChips = document.getElementById('workout-day-chips');
+  dayChips.innerHTML = '';
+  phase.days.forEach((d, i) => {
+    const chip = el(`<button type="button" class="tag-chip">${escapeHtml(d.dayLabel)} — ${escapeHtml(d.label)}</button>`);
+    const active = i === dayIndex;
+    chip.style.background = active ? 'var(--teal)' : 'var(--surface-raised)';
+    chip.style.color = active ? 'var(--surface)' : 'var(--teal)';
+    chip.style.borderColor = 'var(--teal)';
+    chip.addEventListener('click', () => { workoutState.dayOverride = i; renderWorkouts(); });
+    dayChips.appendChild(chip);
+  });
+
+  const list = document.getElementById('workout-exercises');
+  list.innerHTML = '';
+  list.appendChild(el(`
+    <div class="section-header-row">
+      <div class="section-label">${escapeHtml(day.dayLabel)} · ${escapeHtml(day.label)}</div>
+      <div class="totals">${day.exercises.length} exercises</div>
+    </div>
+  `));
+
+  day.exercises.forEach((ex, i) => {
+    const otherWeeks = Object.keys(ex.weeks)
+      .map(Number)
+      .filter(w => w !== week && w <= phase.weeks)
+      .map(w => `<span class="other-week">W${w} ${escapeHtml(String(ex.weeks[w]))}</span>`)
+      .join('');
+    const imageHtml = ex.image
+      ? `<img class="exercise-image" src="${escapeHtml(ex.image)}" alt="" loading="lazy">`
+      : '';
+    list.appendChild(el(`
+      <article class="exercise-card">
+        <div class="exercise-head">
+          <span class="exercise-index">${i + 1}</span>
+          <h3 class="exercise-name">${escapeHtml(ex.name)}</h3>
+        </div>
+        ${imageHtml}
+        <div class="exercise-sets">
+          <span class="sets-label">Week ${week}</span>
+          <span class="sets-value">${escapeHtml(String(ex.weeks[week] ?? '—'))}</span>
+        </div>
+        <p class="exercise-instructions">${escapeHtml(ex.instructions)}</p>
+        <div class="exercise-other-weeks">${otherWeeks}</div>
+      </article>
+    `));
+  });
+}
+
 // ==================== HISTORY ====================
 function renderHistory() {
   renderHistoryList();
@@ -1472,6 +1557,9 @@ document.getElementById('add-weight-btn').addEventListener('click', () => {
     renderWeightLog();
   });
 });
+
+document.getElementById('open-history-btn').addEventListener('click', () => goTo('history'));
+document.getElementById('history-back').addEventListener('click', () => goTo('settings'));
 
 document.getElementById('logout-btn').addEventListener('click', async () => {
   await logout();
