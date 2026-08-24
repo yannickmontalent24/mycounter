@@ -3,7 +3,7 @@ import {
   resolveTarget, weekdayOf, recipePerGram, recipePortionMacros,
   foodPortionMacros, heroState, validateFood, validateRecipe, entryMacros,
   isDraftRecipe, findSimilarFoods, normalizeFoodName, unitOf, exportDayText,
-  inferMeal, groupEntriesByMeal, sumMacros, MEALS,
+  inferMeal, groupEntriesByMeal, sumMacros, MEALS, resolveEntriesForDisplay,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -255,6 +255,42 @@ test('groupEntriesByMeal: pre-meal entries are set aside, never guessed into a s
   for (const m of MEALS) {
     assert.ok(!groups.get(m).some(e => e.id === 'legacy'), `legacy entry must not appear in ${m}`);
   }
+});
+
+// Regression: the display step used to drop `meal`, so every entry rendered as unassigned
+// however it was saved. Grouping was tested in isolation and never caught it.
+test('resolveEntriesForDisplay: carries meal through to the rendered row', () => {
+  const foods = new Map([['f', { id: 'f', name: 'Boiled egg', per100g: { kcal: 155, protein: 13 } }]]);
+  const rows = resolveEntriesForDisplay(
+    [{ id: '1', date: '2026-08-24', foodId: 'f', recipeId: null, grams: 60, meal: 'breakfast' }],
+    foods, new Map(),
+  );
+  assert.equal(rows[0].meal, 'breakfast');
+  assert.equal(rows[0].name, 'Boiled egg');
+  assert.equal(rows[0].grams, 60);
+});
+
+test('resolveEntriesForDisplay: rows survive grouping into their real section', () => {
+  const foods = new Map([['f', { id: 'f', name: 'Egg', per100g: { kcal: 155, protein: 13 } }]]);
+  const entries = [
+    { id: '1', foodId: 'f', grams: 60, meal: 'breakfast' },
+    { id: '2', foodId: 'f', grams: 60, meal: 'dinner' },
+    { id: '3', foodId: 'f', grams: 60 },
+  ];
+  const { groups, unsorted } = groupEntriesByMeal(resolveEntriesForDisplay(entries, foods, new Map()));
+  assert.equal(groups.get('breakfast').length, 1, 'a breakfast entry must land in breakfast');
+  assert.equal(groups.get('dinner').length, 1);
+  assert.equal(unsorted.length, 1, 'only the entry with no meal is unassigned');
+});
+
+test('resolveEntriesForDisplay: a recipe entry keeps its meal too', () => {
+  const foods = new Map([['c', { id: 'c', per100g: { kcal: 106, protein: 24, carbs: null, fat: null, fibre: null } }]]);
+  const recipes = new Map([['r', { id: 'r', name: 'Batch A', ingredients: [{ foodId: 'c', grams: 600 }], cookedWeightG: 1420, portions: 4 }]]);
+  const rows = resolveEntriesForDisplay(
+    [{ id: '1', foodId: null, recipeId: 'r', grams: 355, meal: 'lunch' }], foods, recipes,
+  );
+  assert.equal(rows[0].meal, 'lunch');
+  assert.equal(rows[0].name, 'Batch A');
 });
 
 test('sumMacros: totals a section', () => {

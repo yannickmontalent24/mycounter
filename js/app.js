@@ -4,7 +4,7 @@ import {
   resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
   foodPortionMacros, recipePerGram, validateFood, validateRecipe, formatDateHeader,
   isDraftRecipe, findSimilarFoods, unitOf,
-  MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros,
+  MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
 } from './logic.js';
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
@@ -130,13 +130,7 @@ async function renderToday() {
   document.getElementById('today-date-chip').textContent = formatDateHeader(dateStr);
 
   const entries = await db.entriesInRange(dateStr, dateStr);
-  const fMap = foodsById(), rMap = recipesById();
-  const resolved = entries
-    .map(e => {
-      const m = entryMacros(e, fMap, rMap);
-      return m ? { id: e.id, grams: e.grams, ...m } : null;
-    })
-    .filter(Boolean);
+  const resolved = resolveEntriesForDisplay(entries, foodsById(), recipesById());
 
   const kcalTotal = resolved.reduce((a, e) => a + e.kcal, 0);
   const protTotal = resolved.reduce((a, e) => a + e.protein, 0);
@@ -1499,10 +1493,15 @@ function openModal(bodyHtml) {
   const sheet = document.getElementById('modal-sheet');
   sheet.innerHTML = bodyHtml;
   backdrop.hidden = false;
+  // The page behind must stay put while a sheet is up. The scrolling element is .screen, not
+  // body, so locking body alone would do nothing here.
+  document.body.classList.add('modal-open');
+  sheet.scrollTop = 0;
 }
 function closeModal() {
   document.getElementById('modal-backdrop').hidden = true;
   document.getElementById('modal-sheet').innerHTML = '';
+  document.body.classList.remove('modal-open');
 }
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target.id === 'modal-backdrop') closeModal();

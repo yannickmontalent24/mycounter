@@ -73,6 +73,25 @@ export function entryMacros(entry, foodsById, recipesById) {
   return null;
 }
 
+// Turns stored log entries into rows ready to render. Every field the UI groups or filters on
+// must survive this step — `meal` was previously dropped here, which sent every entry to the
+// "not assigned" pile regardless of what was actually saved.
+export function resolveEntriesForDisplay(entries, foodsById, recipesById) {
+  return entries
+    .map(entry => {
+      const macros = entryMacros(entry, foodsById, recipesById);
+      if (!macros) return null;
+      return {
+        ...macros,
+        id: entry.id,
+        grams: entry.grams,
+        meal: entry.meal ?? null,
+        loggedAt: entry.loggedAt ?? null,
+      };
+    })
+    .filter(Boolean);
+}
+
 export function heroState(consumed, target) {
   if (target == null) {
     return { remaining: null, over: false, mark: '·', stateText: 'no target set', ofTargetText: `${consumed} logged`, dash: '0 1' };

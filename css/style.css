@@ -753,7 +753,15 @@ a { color: var(--navy); }
   padding: 20px 24px calc(24px + env(safe-area-inset-bottom));
   max-height: 85vh;
   overflow-y: auto;
+  /* Reaching the end of the sheet must not start scrolling the page underneath. */
+  overscroll-behavior: contain;
 }
+
+/* While a sheet is up, freeze whatever is behind it. */
+body.modal-open .screen { overflow: hidden; }
+body.modal-open { overflow: hidden; }
+.modal-backdrop { overscroll-behavior: contain; touch-action: none; }
+.modal-sheet { touch-action: auto; }
 
 .modal-sheet h2 { font-size: 1.25rem; font-weight: 600; margin: 0 0 14px; }
 
