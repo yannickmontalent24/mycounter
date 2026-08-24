@@ -206,17 +206,208 @@ function buildMealSection(meal, label, entries, { canAdd }) {
   }
 
   const addBtn = section.querySelector('[data-add-meal]');
-  if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      logState.query = '';
-      logState.pickedId = null;
-      logState.pickedKind = null;
-      logState.grams = '';
-      logState.meal = meal;
-      goTo('log');
-    });
-  }
+  if (addBtn) addBtn.addEventListener('click', () => openLogSheet(meal));
   return section;
+}
+
+// ==================== QUICK LOG SHEET ====================
+// Logging happens where the day is being read, rather than sending the user to another tab
+// and back. Same maths as the Log screen; the tab remains for anything more involved.
+const sheetState = { meal: 'lunch', query: '', pickedId: null, pickedKind: null, grams: '' };
+
+function loggableItems() {
+  return [
+    ...cache.foods.map(f => ({ kind: 'food', record: f })),
+    ...cache.recipes.filter(r => !isDraftRecipe(r)).map(r => ({ kind: 'recipe', record: r })),
+  ];
+}
+
+function frequencyOf(kind, id) {
+  return cache.foodFrequency.get(`${kind}:${id}`) ?? 0;
+}
+
+// "Favourites" are earned, not curated — whatever actually gets logged most, so the common
+// case needs no typing at all.
+function favouriteItems(limit = 6) {
+  return loggableItems()
+    .map(c => ({ ...c, count: frequencyOf(c.kind, c.record.id) }))
+    .filter(c => c.count > 0)
+    .sort((a, b) => b.count - a.count || a.record.name.localeCompare(b.record.name))
+    .slice(0, limit);
+}
+
+function sheetPicked() {
+  if (!sheetState.pickedId) return null;
+  return sheetState.pickedKind === 'recipe'
+    ? recipesById().get(sheetState.pickedId)
+    : foodsById().get(sheetState.pickedId);
+}
+
+function sheetUnit() {
+  if (sheetState.pickedKind === 'recipe') return 'g';
+  return unitOf(sheetPicked());
+}
+
+function openLogSheet(meal) {
+  sheetState.meal = meal;
+  sheetState.query = '';
+  sheetState.pickedId = null;
+  sheetState.pickedKind = null;
+  sheetState.grams = '';
+
+  openModal(`
+    <div class="sheet-head">
+      <h2 style="margin:0;">Add to ${escapeHtml(MEAL_LABELS[meal])}</h2>
+      <button type="button" class="meal-chip" id="sheet-meal-chip">${escapeHtml(MEAL_LABELS[meal])}</button>
+    </div>
+    <input class="text-input" id="sheet-search" type="text" placeholder="Search foods and recipes" autocomplete="off" style="margin-bottom:6px;">
+    <div class="section-label" id="sheet-list-label" style="margin:12px 0 0;">Favourites</div>
+    <div class="search-results" id="sheet-results"></div>
+    <div id="sheet-amount" hidden>
+      <div class="section-label" id="sheet-amount-label" style="margin-top:16px;">Amount (g)</div>
+      <div class="amount-row">
+        <button type="button" class="stepper-btn" id="sheet-minus" aria-label="Decrease by 10">−</button>
+        <div class="amount-field">
+          <input id="sheet-grams" type="text" inputmode="numeric" maxlength="4" aria-label="Amount">
+          <span class="unit" id="sheet-unit">g</span>
+        </div>
+        <button type="button" class="stepper-btn" id="sheet-plus" aria-label="Increase by 10">+</button>
+      </div>
+      <div class="draft-summary">
+        <span class="name" id="sheet-draft-name">Nothing selected</span>
+        <span class="macros" id="sheet-draft-macros">—</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="sheet-cancel">Cancel</button>
+      <button type="button" class="primary-btn" id="sheet-add" disabled>Add</button>
+    </div>
+  `);
+
+  document.getElementById('sheet-cancel').addEventListener('click', closeModal);
+  document.getElementById('sheet-search').addEventListener('input', e => {
+    sheetState.query = e.target.value;
+    renderSheetResults();
+  });
+  document.getElementById('sheet-meal-chip').addEventListener('click', () => {
+    sheetState.meal = MEALS[(MEALS.indexOf(sheetState.meal) + 1) % MEALS.length];
+    document.getElementById('sheet-meal-chip').textContent = MEAL_LABELS[sheetState.meal];
+    document.querySelector('#modal-sheet h2').textContent = `Add to ${MEAL_LABELS[sheetState.meal]}`;
+  });
+  document.getElementById('sheet-minus').addEventListener('click', () => adjustSheetGrams(-10));
+  document.getElementById('sheet-plus').addEventListener('click', () => adjustSheetGrams(10));
+  document.getElementById('sheet-grams').addEventListener('input', e => {
+    sheetState.grams = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+    e.target.value = sheetState.grams;
+    renderSheetDraft();
+  });
+  document.getElementById('sheet-add').addEventListener('click', confirmSheetLog);
+
+  renderSheetResults();
+}
+
+function adjustSheetGrams(delta) {
+  const next = Math.max(10, (parseInt(sheetState.grams, 10) || 0) + delta);
+  sheetState.grams = String(next);
+  document.getElementById('sheet-grams').value = sheetState.grams;
+  renderSheetDraft();
+}
+
+function renderSheetResults() {
+  const q = sheetState.query.trim().toLowerCase();
+  const label = document.getElementById('sheet-list-label');
+  let results;
+
+  if (q) {
+    results = loggableItems()
+      .filter(c => c.record.name.toLowerCase().includes(q))
+      .sort((a, b) => frequencyOf(b.kind, b.record.id) - frequencyOf(a.kind, a.record.id)
+        || a.record.name.localeCompare(b.record.name))
+      .slice(0, 6);
+    label.textContent = 'Results';
+  } else {
+    results = favouriteItems();
+    label.textContent = results.length ? 'Favourites — most logged' : 'Start typing to find a food';
+  }
+
+  const container = document.getElementById('sheet-results');
+  container.innerHTML = '';
+  for (const { kind, record, count } of results) {
+    const selected = sheetState.pickedId === record.id && sheetState.pickedKind === kind;
+    const meta = kind === 'recipe'
+      ? 'recipe'
+      : `${record.per100g.kcal} kcal /100${unitOf(record)}`;
+    const btn = el(`
+      <button type="button" class="search-result-btn">
+        <span class="name">${escapeHtml(record.name)}</span>
+        <span class="per100">${escapeHtml(meta)}${count ? ` · ×${count}` : ''}</span>
+        <span class="check">${selected ? '●' : '○'}</span>
+      </button>
+    `);
+    btn.addEventListener('click', () => {
+      sheetState.pickedId = record.id;
+      sheetState.pickedKind = kind;
+      sheetState.grams = String(kind === 'recipe' ? onePortionGrams(record) : (record.defaultPortionG ?? 100));
+      document.getElementById('sheet-grams').value = sheetState.grams;
+      document.getElementById('sheet-amount').hidden = false;
+      const unit = sheetUnit();
+      document.getElementById('sheet-unit').textContent = unit;
+      document.getElementById('sheet-amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
+      renderSheetResults();
+      renderSheetDraft();
+    });
+    container.appendChild(btn);
+  }
+
+  if (q && results.length === 0) {
+    container.appendChild(el(`<div class="meal-empty">No match. Use the Log tab to add a new food.</div>`));
+  }
+}
+
+function renderSheetDraft() {
+  const picked = sheetPicked();
+  const nameEl = document.getElementById('sheet-draft-name');
+  const macrosEl = document.getElementById('sheet-draft-macros');
+  const addBtn = document.getElementById('sheet-add');
+  const grams = parseInt(sheetState.grams, 10) || 0;
+
+  if (!picked || !grams) {
+    nameEl.textContent = picked ? picked.name : 'Nothing selected';
+    macrosEl.textContent = '—';
+    addBtn.disabled = true;
+    return;
+  }
+  try {
+    const m = sheetState.pickedKind === 'recipe'
+      ? recipePortionMacros(picked, foodsById(), grams)
+      : foodPortionMacros(picked, grams);
+    nameEl.textContent = picked.name;
+    macrosEl.textContent = `${m.kcal} kcal · ${m.protein} g`;
+    addBtn.disabled = false;
+  } catch {
+    macrosEl.textContent = 'missing ingredient';
+    addBtn.disabled = true;
+  }
+}
+
+async function confirmSheetLog() {
+  const grams = parseInt(sheetState.grams, 10) || 0;
+  if (!sheetState.pickedId || !grams) return;
+  const isRecipe = sheetState.pickedKind === 'recipe';
+  const addBtn = document.getElementById('sheet-add');
+  addBtn.disabled = true;
+  await db.put('logEntries', {
+    id: crypto.randomUUID(),
+    date: todayISO(),
+    foodId: isRecipe ? null : sheetState.pickedId,
+    recipeId: isRecipe ? sheetState.pickedId : null,
+    grams,
+    meal: sheetState.meal,
+    loggedAt: new Date().toISOString(),
+  });
+  await refreshCache();
+  closeModal();
+  renderToday();
 }
 
 function openMealPicker(entry) {
@@ -889,7 +1080,10 @@ function renderRecipes() {
       const recipe = recipesById().get(btn.dataset.logRecipe);
       if (!recipe || isDraftRecipe(recipe)) return;
       const grams = Math.round(recipe.cookedWeightG / recipe.portions);
-      await db.put('logEntries', { id: crypto.randomUUID(), date: todayISO(), foodId: null, recipeId: recipe.id, grams });
+      await db.put('logEntries', {
+        id: crypto.randomUUID(), date: todayISO(), foodId: null, recipeId: recipe.id, grams,
+        meal: inferMeal(), loggedAt: new Date().toISOString(),
+      });
       goTo('today');
     });
   });

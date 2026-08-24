@@ -380,6 +380,14 @@ a { color: var(--navy); }
   padding: 10px 0;
 }
 
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 .meal-chip {
   font-family: var(--font-mono);
   font-size: 0.75rem;
