@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" role="img" aria-label="Russian twist">
+  <line x1="18" y1="104" x2="182" y2="104" stroke="#C9C8C0" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke="#14213D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M84 96 L70 60"/>
+    <path d="M84 96 L120 74"/>
+    <path d="M120 74 L138 100"/>
+    <path d="M72 62 L112 70"/>
+  </g>
+  <circle cx="65" cy="50" r="8.5" fill="none" stroke="#14213D" stroke-width="4.5"/>
+  <g stroke="#0E6A70" stroke-width="4.5" stroke-linecap="round" fill="none">
+    <line x1="112" y1="60" x2="112" y2="80"/>
+  </g>
+  <circle cx="112" cy="57" r="5" fill="none" stroke="#0E6A70" stroke-width="4"/>
+  <circle cx="112" cy="83" r="5" fill="none" stroke="#0E6A70" stroke-width="4"/>
+  <path d="M132 40 A 26 26 0 0 0 92 32" fill="none" stroke="#0E6A70" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M92 39 L92 31 L100 31" fill="none" stroke="#0E6A70" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

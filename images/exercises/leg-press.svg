@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" role="img" aria-label="Leg press">
+  <g stroke="#C9C8C0" stroke-width="3" stroke-linecap="round" fill="none">
+    <path d="M26 104 L150 104"/>
+    <path d="M40 104 L40 88"/>
+  </g>
+  <g fill="none" stroke="#0E6A70" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M34 88 L64 66"/>
+    <path d="M124 30 L152 62"/>
+  </g>
+  <g fill="none" stroke="#14213D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M62 80 L96 62"/>
+    <path d="M96 62 L130 46"/>
+    <path d="M62 80 L48 58"/>
+  </g>
+  <circle cx="43" cy="48" r="8.5" fill="none" stroke="#14213D" stroke-width="4.5"/>
+</svg>

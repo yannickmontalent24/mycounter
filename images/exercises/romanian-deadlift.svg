@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" role="img" aria-label="Romanian deadlift">
+  <line x1="18" y1="106" x2="182" y2="106" stroke="#C9C8C0" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke="#14213D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M92 106 L90 76"/>
+    <path d="M90 76 L84 58"/>
+    <path d="M84 58 L126 48"/>
+    <path d="M120 50 L120 74"/>
+    <path d="M84 106 L98 106"/>
+  </g>
+  <circle cx="138" cy="45" r="8.5" fill="none" stroke="#14213D" stroke-width="4.5"/>
+  <line x1="96" y1="76" x2="146" y2="76" stroke="#0E6A70" stroke-width="4.5" stroke-linecap="round"/>
+  <circle cx="95" cy="76" r="8" fill="none" stroke="#0E6A70" stroke-width="4"/>
+  <circle cx="147" cy="76" r="8" fill="none" stroke="#0E6A70" stroke-width="4"/>
+</svg>

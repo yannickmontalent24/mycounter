@@ -1,6 +1,6 @@
 // Cache-first app shell. GitHub Pages can't set custom Cache-Control headers, so
 // cache-busting on deploy happens here: bump CACHE_VERSION and old caches are dropped on activate.
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const CACHE_NAME = `calorie-tracker-${CACHE_VERSION}`;
 
 // Paths are relative to this file's own scope so this works unmodified whether the app is
@@ -29,6 +29,15 @@ const SHELL_FILES = [
   'fonts/ibm-plex-mono-400.woff2',
   'fonts/ibm-plex-mono-500.woff2',
   'fonts/ibm-plex-mono-600.woff2',
+  'images/exercises/back-squat.svg',
+  'images/exercises/leg-press.svg',
+  'images/exercises/bulgarian-split-squat.svg',
+  'images/exercises/romanian-deadlift.svg',
+  'images/exercises/calf-raises.svg',
+  'images/exercises/plank.svg',
+  'images/exercises/side-plank.svg',
+  'images/exercises/dead-bug.svg',
+  'images/exercises/russian-twist.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-512-maskable.png',

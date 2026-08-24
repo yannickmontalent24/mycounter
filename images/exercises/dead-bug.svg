@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" role="img" aria-label="Dead bug">
+  <line x1="18" y1="98" x2="182" y2="98" stroke="#C9C8C0" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke="#14213D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M70 90 L118 90"/>
+    <path d="M70 90 L64 56"/>
+    <path d="M70 90 L34 74"/>
+    <path d="M118 90 L122 56"/>
+    <path d="M122 56 L152 52"/>
+    <path d="M118 90 L164 92"/>
+  </g>
+  <circle cx="56" cy="90" r="8.5" fill="none" stroke="#14213D" stroke-width="4.5"/>
+  <circle cx="62" cy="48" r="4.5" fill="none" stroke="#0E6A70" stroke-width="4"/>
+  <circle cx="158" cy="51" r="4.5" fill="none" stroke="#0E6A70" stroke-width="4"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" role="img" aria-label="Bulgarian split squat">
+  <line x1="18" y1="106" x2="182" y2="106" stroke="#C9C8C0" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke="#0E6A70" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M132 82 L176 82"/>
+    <path d="M140 82 L140 106"/>
+    <path d="M168 82 L168 106"/>
+  </g>
+  <g fill="none" stroke="#14213D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M74 106 L78 74"/>
+    <path d="M78 74 L102 76"/>
+    <path d="M102 76 L124 94"/>
+    <path d="M124 94 L146 80"/>
+    <path d="M102 76 L102 44"/>
+    <path d="M102 48 L96 70"/>
+    <path d="M68 106 L82 106"/>
+  </g>
+  <circle cx="102" cy="34" r="8.5" fill="none" stroke="#14213D" stroke-width="4.5"/>
+  <circle cx="94" cy="76" r="5.5" fill="none" stroke="#0E6A70" stroke-width="4"/>
+</svg>
