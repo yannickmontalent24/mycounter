@@ -743,6 +743,19 @@ a { color: var(--navy); }
   gap: 6px;
 }
 
+.exercise-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  min-height: 44px;
+  line-height: 44px;
+}
+.exercise-link:hover { color: var(--navy); }
+
 .other-week {
   font-family: var(--font-mono);
   font-size: 0.6875rem;

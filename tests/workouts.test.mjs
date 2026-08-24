@@ -41,6 +41,26 @@ test('every exercise has sets/reps for all three weeks', () => {
   }
 });
 
+test('every exercise links to its own distinct guide over https', () => {
+  const links = [];
+  for (const day of phase1.days) {
+    for (const ex of day.exercises) {
+      assert.ok(ex.link, `${ex.name} has no link`);
+      assert.ok(ex.link.startsWith('https://'), `${ex.name} link must be https`);
+      links.push(ex.link);
+    }
+  }
+  assert.equal(new Set(links).size, links.length, 'each exercise needs its own URL, not a shared one');
+});
+
+test('instructions stand alone, since the links need a connection the gym may not have', () => {
+  for (const day of phase1.days) {
+    for (const ex of day.exercises) {
+      assert.ok(ex.instructions.length > 40, `${ex.name} instructions are too thin to use offline`);
+    }
+  }
+});
+
 test('weekNumberFor: maps dates onto weeks 1-3', () => {
   assert.equal(weekNumberFor(phase1, '2026-08-24'), 1, 'first day');
   assert.equal(weekNumberFor(phase1, '2026-08-30'), 1, 'last day of week 1');

@@ -1,6 +1,6 @@
 // Cache-first app shell. GitHub Pages can't set custom Cache-Control headers, so
 // cache-busting on deploy happens here: bump CACHE_VERSION and old caches are dropped on activate.
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const CACHE_NAME = `calorie-tracker-${CACHE_VERSION}`;
 
 // Paths are relative to this file's own scope so this works unmodified whether the app is

@@ -1343,6 +1343,7 @@ function renderWorkouts() {
         </div>
         <p class="exercise-instructions">${escapeHtml(ex.instructions)}</p>
         <div class="exercise-other-weeks">${otherWeeks}</div>
+        ${ex.link ? `<a class="exercise-link" href="${escapeHtml(ex.link)}" target="_blank" rel="noopener noreferrer">How to do it — video guide ↗</a>` : ''}
       </article>
     `));
   });
