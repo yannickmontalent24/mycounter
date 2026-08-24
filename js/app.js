@@ -4,6 +4,7 @@ import {
   resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
   foodPortionMacros, recipePerGram, validateFood, validateRecipe, formatDateHeader,
   isDraftRecipe, findSimilarFoods, unitOf,
+  MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros,
 } from './logic.js';
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
@@ -152,10 +153,36 @@ async function renderToday() {
 
   const list = document.getElementById('today-entry-list');
   list.innerHTML = '';
-  if (resolved.length === 0) {
-    list.appendChild(el(`<div class="empty-state">Nothing logged yet today.</div>`));
+
+  const { groups, unsorted } = groupEntriesByMeal(resolved);
+  for (const meal of MEALS) {
+    list.appendChild(buildMealSection(meal, MEAL_LABELS[meal], groups.get(meal), { canAdd: true }));
   }
-  for (const e of resolved) {
+  if (unsorted.length) {
+    list.appendChild(buildMealSection(null, 'Not assigned', unsorted, { canAdd: false }));
+  }
+}
+
+// One section per meal. Empty sections still render, because their "+" is the way to log
+// into that meal (feature brief §3) — but they stay compact so the day is still scannable.
+function buildMealSection(meal, label, entries, { canAdd }) {
+  const totals = sumMacros(entries);
+  const section = el(`
+    <section class="meal-section">
+      <div class="meal-header">
+        <span class="meal-title">${escapeHtml(label)}</span>
+        <span class="meal-subtotal">${entries.length ? `${totals.kcal} kcal · ${totals.protein} g` : ''}</span>
+        ${canAdd ? `<button type="button" class="meal-add" data-add-meal="${meal}" aria-label="Log food under ${escapeHtml(label)}">+</button>` : ''}
+      </div>
+      <div class="meal-rows"></div>
+    </section>
+  `);
+
+  const rows = section.querySelector('.meal-rows');
+  if (!entries.length) {
+    rows.appendChild(el(`<div class="meal-empty">—</div>`));
+  }
+  for (const e of entries) {
     const row = el(`
       <div class="entry-row">
         <div class="entry-main">
@@ -166,15 +193,53 @@ async function renderToday() {
           <div>${e.kcal} kcal</div>
           <div class="protein">${e.protein} g protein</div>
         </div>
-        <button type="button" class="delete-btn" aria-label="Delete entry">×</button>
+        <button type="button" class="icon-btn-small" data-move-entry="${e.id}" aria-label="Change meal for ${escapeHtml(e.name)}">⇄</button>
+        <button type="button" class="delete-btn" aria-label="Delete ${escapeHtml(e.name)}">×</button>
       </div>
     `);
     row.querySelector('.delete-btn').addEventListener('click', async () => {
       await db.remove('logEntries', e.id);
       renderToday();
     });
-    list.appendChild(row);
+    row.querySelector('[data-move-entry]').addEventListener('click', () => openMealPicker(e));
+    rows.appendChild(row);
   }
+
+  const addBtn = section.querySelector('[data-add-meal]');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      logState.query = '';
+      logState.pickedId = null;
+      logState.pickedKind = null;
+      logState.grams = '';
+      logState.meal = meal;
+      goTo('log');
+    });
+  }
+  return section;
+}
+
+function openMealPicker(entry) {
+  const buttons = MEALS.map(m => `
+    <button type="button" class="secondary-btn" data-pick-meal="${m}" style="margin-bottom:8px; text-align:center;">${MEAL_LABELS[m]}</button>
+  `).join('');
+  openModal(`
+    <h2>Move to which meal?</h2>
+    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">${escapeHtml(entry.name)}</p>
+    ${buttons}
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="meal-cancel" style="text-align:center;">Cancel</button>
+    </div>
+  `);
+  document.getElementById('meal-cancel').addEventListener('click', closeModal);
+  document.querySelectorAll('[data-pick-meal]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const stored = await db.get('logEntries', entry.id);
+      if (stored) await db.put('logEntries', { ...stored, meal: btn.dataset.pickMeal });
+      closeModal();
+      renderToday();
+    });
+  });
 }
 
 function applyHero(kind, state, consumed, target) {
@@ -214,7 +279,9 @@ document.getElementById('export-day-btn').addEventListener('click', async () => 
 });
 
 // ==================== LOG ENTRY ====================
-const logState = { query: '', pickedId: null, pickedKind: null, grams: '' };
+// `meal` is null until the user logs, at which point it's inferred from the clock — unless
+// they arrived via a section's "+", which sets it explicitly.
+const logState = { query: '', pickedId: null, pickedKind: null, grams: '', meal: null };
 
 function pickedRecord() {
   if (!logState.pickedId) return null;
@@ -259,7 +326,20 @@ function renderLog() {
   document.getElementById('grams-down').setAttribute('aria-label', `Decrease by 10 ${unit === 'ml' ? 'millilitres' : 'grams'}`);
   document.getElementById('grams-up').setAttribute('aria-label', `Increase by 10 ${unit === 'ml' ? 'millilitres' : 'grams'}`);
   document.getElementById('amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
+
+  const effectiveMeal = logState.meal ?? inferMeal();
+  const chip = document.getElementById('log-meal-chip');
+  chip.textContent = MEAL_LABELS[effectiveMeal];
+  chip.setAttribute('aria-label', `Meal: ${MEAL_LABELS[effectiveMeal]}. Tap to change.`);
 }
+
+// Tapping the chip cycles through the four meals — quicker than a picker for a one-off
+// correction, and the current choice is always readable on the chip itself.
+document.getElementById('log-meal-chip').addEventListener('click', () => {
+  const current = logState.meal ?? inferMeal();
+  logState.meal = MEALS[(MEALS.indexOf(current) + 1) % MEALS.length];
+  renderLog();
+});
 
 function renderLogResults() {
   const q = logState.query.trim().toLowerCase();
@@ -473,8 +553,11 @@ document.getElementById('confirm-log-btn').addEventListener('click', async () =>
     foodId: isRecipe ? null : logState.pickedId,
     recipeId: isRecipe ? logState.pickedId : null,
     grams,
+    meal: logState.meal ?? inferMeal(),
+    loggedAt: new Date().toISOString(),
   });
-  logState.query = ''; logState.pickedId = null; logState.pickedKind = null; logState.grams = '';
+  logState.query = ''; logState.pickedId = null; logState.pickedKind = null;
+  logState.grams = ''; logState.meal = null;
   goTo('today');
 });
 

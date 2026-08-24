@@ -331,6 +331,69 @@ a { color: var(--navy); }
   font-weight: 600;
 }
 
+/* Meal sections */
+.meal-section { margin-bottom: 18px; }
+
+.meal-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.meal-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.meal-subtotal {
+  flex: 1;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.meal-add {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1.5px solid var(--navy);
+  background: var(--surface-raised);
+  border-radius: 10px;
+  color: var(--navy);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.meal-add:hover { background: var(--navy); color: var(--surface); }
+
+.meal-empty {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--placeholder);
+  padding: 10px 0;
+}
+
+.meal-chip {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--teal);
+  background: var(--teal-badge-bg);
+  border: 1.5px solid var(--teal-tint-border);
+  border-radius: 999px;
+  padding: 7px 12px;
+  min-height: 34px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.meal-chip:hover { background: var(--teal); color: var(--surface); border-color: var(--teal); }
+
 /* Log entry screen */
 .field-label {
   display: block;
@@ -342,13 +405,20 @@ a { color: var(--navy); }
   margin-bottom: 8px;
 }
 
+/* Component vocabulary — a field and a button must be tellable apart at a glance, and not by
+   colour alone (design brief §5). The rule across the whole app:
+     button  = navy 1.5px border, 600 weight, centred label, generous radius
+     field   = grey 1px border, 400 weight, left-aligned text, tighter radius
+     link    = teal underlined text, no border, no background                                  */
 .text-input {
   width: 100%;
   height: 52px;
   padding: 0 16px;
   font-size: 1rem;
+  font-weight: 400;
+  text-align: left;
   border: 1px solid var(--control-border);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--surface-raised);
   color: var(--navy);
 }
@@ -388,20 +458,21 @@ a { color: var(--navy); }
   width: 56px;
   height: 56px;
   flex: none;
-  border: 1px solid var(--control-border);
+  border: 1.5px solid var(--navy);
   background: var(--surface-raised);
-  border-radius: 14px;
+  border-radius: 16px;
   font-family: var(--font-mono);
   font-size: 1.25rem;
+  font-weight: 600;
   color: var(--navy);
 }
-.stepper-btn:hover { background: #F0EFEA; }
+.stepper-btn:hover { background: var(--navy-tint-bg); }
 
 .amount-field {
   flex: 1;
   height: 56px;
   border: 1px solid var(--control-border);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--surface-raised);
   display: flex;
   align-items: center;
@@ -456,16 +527,32 @@ a { color: var(--navy); }
 
 .secondary-btn {
   height: 52px;
-  border: 1px solid var(--control-border);
+  border: 1.5px solid var(--navy);
   background: var(--surface-raised);
-  border-radius: 14px;
+  border-radius: 16px;
   font-size: 0.9375rem;
+  font-weight: 600;
   color: var(--navy);
-  text-align: left;
+  text-align: center;
   padding: 0 16px;
   width: 100%;
 }
-.secondary-btn:hover { background: #F0EFEA; }
+.secondary-btn:hover { background: var(--navy-tint-bg); }
+.secondary-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Tertiary action: reads as text, never competes with a real button. */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 4px 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  width: auto;
+}
+.link-btn:hover { color: var(--navy); }
 
 /* Tag chips */
 .tag-chips {

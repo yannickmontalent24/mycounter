@@ -86,7 +86,10 @@
   </main>
 
   <main id="screen-log" class="screen" data-screen="log" hidden>
-    <h1 class="screen-title" style="margin-bottom:18px;">Log entry</h1>
+    <div class="screen-title-row">
+      <h1 class="screen-title">Log entry</h1>
+      <button type="button" class="meal-chip" id="log-meal-chip" aria-label="Change meal">Dinner</button>
+    </div>
 
     <label class="field-label" for="foodsearch">Food</label>
     <input id="foodsearch" class="text-input" type="text" placeholder="Search foods" autocomplete="off">

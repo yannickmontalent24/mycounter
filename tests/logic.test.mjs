@@ -3,6 +3,7 @@ import {
   resolveTarget, weekdayOf, recipePerGram, recipePortionMacros,
   foodPortionMacros, heroState, validateFood, validateRecipe, entryMacros,
   isDraftRecipe, findSimilarFoods, normalizeFoodName, unitOf, exportDayText,
+  inferMeal, groupEntriesByMeal, sumMacros, MEALS,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -213,6 +214,52 @@ test('findSimilarFoods: excludes the food being edited', () => {
 
 test('normalizeFoodName: strips punctuation and collapses whitespace', () => {
   assert.equal(normalizeFoodName("Tia's Granola —  No Sugar"), 'tia s granola no sugar');
+});
+
+// --- Meal grouping ---
+test('inferMeal: maps the clock onto breakfast/lunch/dinner', () => {
+  const at = h => new Date(2026, 7, 22, h, 0, 0);
+  assert.equal(inferMeal(at(7)), 'breakfast');
+  assert.equal(inferMeal(at(10)), 'breakfast');
+  assert.equal(inferMeal(at(11)), 'lunch');
+  assert.equal(inferMeal(at(13)), 'lunch');
+  assert.equal(inferMeal(at(16)), 'dinner');
+  assert.equal(inferMeal(at(20)), 'dinner');
+  assert.equal(inferMeal(at(22)), 'snacks');
+  assert.equal(inferMeal(at(2)), 'snacks');
+});
+
+test('inferMeal: always returns one of the four valid categories', () => {
+  for (let h = 0; h < 24; h++) {
+    assert.ok(MEALS.includes(inferMeal(new Date(2026, 7, 22, h, 30))), `hour ${h}`);
+  }
+});
+
+test('groupEntriesByMeal: files entries under their category, in fixed order', () => {
+  const { groups, unsorted } = groupEntriesByMeal([
+    { id: '1', meal: 'dinner' }, { id: '2', meal: 'breakfast' }, { id: '3', meal: 'dinner' },
+  ]);
+  assert.deepEqual([...groups.keys()], MEALS, 'sections keep a fixed order');
+  assert.equal(groups.get('dinner').length, 2);
+  assert.equal(groups.get('breakfast').length, 1);
+  assert.equal(groups.get('lunch').length, 0);
+  assert.deepEqual(unsorted, []);
+});
+
+test('groupEntriesByMeal: pre-meal entries are set aside, never guessed into a section', () => {
+  const { groups, unsorted } = groupEntriesByMeal([
+    { id: 'legacy' }, { id: 'bad', meal: 'brunch' }, { id: 'ok', meal: 'lunch' },
+  ]);
+  assert.equal(unsorted.length, 2, 'missing and unrecognised categories both go unsorted');
+  assert.equal(groups.get('lunch').length, 1);
+  for (const m of MEALS) {
+    assert.ok(!groups.get(m).some(e => e.id === 'legacy'), `legacy entry must not appear in ${m}`);
+  }
+});
+
+test('sumMacros: totals a section', () => {
+  assert.deepEqual(sumMacros([{ kcal: 100, protein: 5 }, { kcal: 250, protein: 30 }]), { kcal: 350, protein: 35 });
+  assert.deepEqual(sumMacros([]), { kcal: 0, protein: 0 });
 });
 
 // --- Millilitre foods (drinks) ---

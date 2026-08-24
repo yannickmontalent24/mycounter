@@ -96,6 +96,43 @@ export function ringDash(consumed, target) {
   return `${(frac * C).toFixed(1)} ${C.toFixed(1)}`;
 }
 
+export const MEALS = ['breakfast', 'lunch', 'dinner', 'snacks'];
+export const MEAL_LABELS = {
+  breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snacks: 'Snacks',
+};
+
+// Meal is inferred from the clock at log time rather than asked for, so logging keeps costing
+// one flow and no extra tap (main brief §12 — anything that adds a second at the counter is
+// suspect). It is always editable afterwards, and logging from a section header sets it
+// explicitly. Snacks can't be inferred meaningfully at any hour, so it's only ever chosen.
+export function inferMeal(when = new Date()) {
+  const h = when.getHours();
+  if (h < 4) return 'snacks';      // small hours belong to the night before, not to breakfast
+  if (h < 11) return 'breakfast';
+  if (h < 16) return 'lunch';
+  if (h < 22) return 'dinner';
+  return 'snacks';
+}
+
+// Entries logged before meals existed carry no category. They are not guessed at — there is no
+// timestamp to guess from — so they surface in their own group to be assigned by hand.
+export function groupEntriesByMeal(entries) {
+  const groups = new Map(MEALS.map(m => [m, []]));
+  const unsorted = [];
+  for (const entry of entries) {
+    if (entry.meal && groups.has(entry.meal)) groups.get(entry.meal).push(entry);
+    else unsorted.push(entry);
+  }
+  return { groups, unsorted };
+}
+
+export function sumMacros(entries) {
+  return entries.reduce(
+    (acc, e) => ({ kcal: acc.kcal + (e.kcal ?? 0), protein: acc.protein + (e.protein ?? 0) }),
+    { kcal: 0, protein: 0 },
+  );
+}
+
 const VALID_SOURCES = new Set(['label', 'reference', 'estimate']);
 export const VALID_UNITS = new Set(['g', 'ml']);
 
