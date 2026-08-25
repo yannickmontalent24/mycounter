@@ -12,6 +12,13 @@ import {
 import { login, logout, onUserChanged, accountLabel, friendlyAuthError } from './auth.js';
 import { findLegacyData, uploadShared, uploadAccount, alreadyMigrated, markMigrated } from './migrate.js';
 import { PHASES, activePhase, weekNumberFor, defaultDayIndex } from './workouts.js';
+import { initPullToRefresh } from './pull-refresh.js';
+
+// Safari (and standalone iOS webviews) still dispatch these non-standard gesture events for
+// pinch even when touch-action forbids zooming, so they need their own preventDefault.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, e => e.preventDefault());
+}
 
 const WEEKDAY_ROWS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const WEEKDAY_LABELS = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
@@ -1631,6 +1638,16 @@ async function submitLogin() {
   }
 }
 
+// The splash stays up across both the "app loading" phase (this module executing) and the
+// "data loading" phase (auth resolving, seed, first cache fill) below, so it only needs
+// hiding once boot lands on either the unlocked app or the login screen.
+function hideSplash() {
+  const splash = document.getElementById('splash-screen');
+  if (!splash || splash.hidden) return;
+  splash.classList.add('splash-hide');
+  setTimeout(() => { splash.hidden = true; }, 220);
+}
+
 async function unlockApp(user) {
   sessionUser = user;
   db.setCurrentUser(user.uid);
@@ -1644,6 +1661,7 @@ async function unlockApp(user) {
   await refreshCache();
   if (!location.hash) location.hash = 'today';
   renderRoute();
+  hideSplash();
 }
 
 function showLoginScreen() {
@@ -1653,6 +1671,7 @@ function showLoginScreen() {
   document.getElementById('login-screen').hidden = false;
   submitBtn.textContent = 'Sign in';
   updateLoginSubmitEnabled();
+  hideSplash();
 }
 
 // ==================== MIGRATION FROM THE LOCAL-ONLY BUILD ====================
@@ -1746,6 +1765,7 @@ window.addEventListener('offline', renderSyncStatus);
 // ==================== BOOT ====================
 function boot() {
   renderSyncStatus();
+  initPullToRefresh();
 
   // Firebase restores the previous session asynchronously, so the app unlocks from here
   // rather than from the sign-in button.

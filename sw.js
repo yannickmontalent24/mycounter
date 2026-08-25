@@ -1,6 +1,6 @@
 // Cache-first app shell. GitHub Pages can't set custom Cache-Control headers, so
 // cache-busting on deploy happens here: bump CACHE_VERSION and old caches are dropped on activate.
-const CACHE_VERSION = 'v13';
+const CACHE_VERSION = 'v14';
 const CACHE_NAME = `calorie-tracker-${CACHE_VERSION}`;
 
 // Paths are relative to this file's own scope so this works unmodified whether the app is
@@ -20,6 +20,7 @@ const SHELL_FILES = [
   'js/firebase-config.js',
   'js/migrate.js',
   'js/workouts.js',
+  'js/pull-refresh.js',
   'vendor/firebase/firebase-app.js',
   'vendor/firebase/firebase-auth.js',
   'vendor/firebase/firebase-firestore.js',

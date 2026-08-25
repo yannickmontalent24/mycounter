@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Calorie &amp; Protein Tracker</title>
 <meta name="theme-color" content="#FAFAF7">
 <meta name="description" content="Offline calorie and protein logging instrument.">
@@ -15,6 +15,16 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+<div id="splash-screen" class="splash-screen" role="status" aria-live="polite">
+  <img src="icons/icon-192.png" alt="" class="splash-icon" width="96" height="96">
+  <div class="splash-spinner" aria-hidden="true"></div>
+  <span class="sr-only">Loading…</span>
+</div>
+
+<div id="pull-refresh" class="pull-refresh" aria-hidden="true">
+  <div class="pull-refresh-spinner"></div>
+</div>
 
 <div id="login-screen" class="login-screen" hidden>
   <div class="login-card">
