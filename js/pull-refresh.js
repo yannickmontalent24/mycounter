@@ -3,9 +3,12 @@
 // it by hand, gated to standalone mode only, so a normal browser tab (which still has the
 // real gesture) isn't given a second, conflicting one.
 
-const PULL_THRESHOLD = 64; // px of actual finger travel needed to arm a refresh
-const MAX_REVEAL = 56;     // matches --pull-refresh height in CSS
-const DRAG_RESISTANCE = 0.5;
+const DEAD_ZONE = 20;        // px of travel ignored before anything happens — absorbs the
+                              // incidental downward jitter in an ordinary scroll or tap
+const DRAG_RESISTANCE = 0.4; // post-dead-zone travel is damped, same as native rubber-banding
+const ARM_DISTANCE = 80;     // damped px needed to arm — works out to ~220px of real finger
+                              // travel, deliberately "long" so a normal scroll can't reach it
+const MAX_REVEAL = 56;       // matches --pull-refresh height in CSS
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -17,8 +20,10 @@ export function initPullToRefresh() {
   const indicator = document.getElementById('pull-refresh');
   if (!indicator) return;
 
+  let startX = null;
   let startY = null;
-  let pulling = false;
+  let pulling = false;   // touch began at scrollTop 0 — still a *candidate* gesture
+  let dragging = false;  // confirmed vertical pull past the dead zone — now driving the UI
   let armed = false;
 
   function activeScreen() {
@@ -33,8 +38,10 @@ export function initPullToRefresh() {
     indicator.style.transition = 'transform 0.2s ease';
     setReveal(0);
     indicator.classList.remove('armed', 'loading');
+    startX = null;
     startY = null;
     pulling = false;
+    dragging = false;
     armed = false;
   }
 
@@ -43,8 +50,10 @@ export function initPullToRefresh() {
     if (e.touches.length !== 1) return;
     const screen = activeScreen();
     if (!screen || screen.scrollTop > 0) return;
+    startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     pulling = true;
+    dragging = false;
     indicator.style.transition = 'none';
   }, { passive: true });
 
@@ -53,19 +62,33 @@ export function initPullToRefresh() {
     const screen = activeScreen();
     if (!screen || screen.scrollTop > 0) { reset(); return; }
 
-    const delta = e.touches[0].clientY - startY;
-    if (delta <= 0) { setReveal(0); armed = false; indicator.classList.remove('armed'); return; }
+    const deltaY = e.touches[0].clientY - startY;
+    const deltaX = e.touches[0].clientX - startX;
 
-    const dragged = delta * DRAG_RESISTANCE;
+    // A swipe that's more sideways than down isn't a pull — leave it alone entirely so it
+    // can't be mistaken for one (or block whatever gesture it actually is).
+    if (Math.abs(deltaX) > Math.abs(deltaY)) { reset(); return; }
+
+    if (deltaY <= DEAD_ZONE) {
+      // Still inside the dead zone (or moving up, e.g. a real scroll attempt): don't touch
+      // the indicator and don't preventDefault, so normal scrolling/tapping is untouched.
+      setReveal(0);
+      armed = false;
+      indicator.classList.remove('armed');
+      return;
+    }
+
+    dragging = true;
+    const dragged = (deltaY - DEAD_ZONE) * DRAG_RESISTANCE;
     setReveal(Math.min(dragged, MAX_REVEAL));
-    armed = dragged >= PULL_THRESHOLD;
+    armed = dragged >= ARM_DISTANCE;
     indicator.classList.toggle('armed', armed);
     if (e.cancelable) e.preventDefault();
   }, { passive: false });
 
   document.addEventListener('touchend', () => {
     if (!pulling) return;
-    if (armed) {
+    if (dragging && armed) {
       indicator.style.transition = 'transform 0.2s ease';
       setReveal(MAX_REVEAL);
       indicator.classList.add('loading');

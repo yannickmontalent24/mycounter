@@ -85,10 +85,21 @@ export async function uploadAccount(account) {
   };
 }
 
+// Once true this can never go back to false, so — same reasoning as the seed checks in
+// seed.js — the fact is cached locally after the first confirmation and the Firestore round
+// trip is skipped on every later boot.
 export async function alreadyMigrated() {
-  return (await db.getMeta('legacy-migrated')) === true;
+  try { if (localStorage.getItem('calorie-tracker:legacy-migrated') === '1') return true; } catch { /* fall through */ }
+  const migrated = (await db.getMeta('legacy-migrated')) === true;
+  if (migrated) markMigratedLocally();
+  return migrated;
+}
+
+function markMigratedLocally() {
+  try { localStorage.setItem('calorie-tracker:legacy-migrated', '1'); } catch { /* best effort */ }
 }
 
 export async function markMigrated() {
   await db.setMeta('legacy-migrated', true);
+  markMigratedLocally();
 }

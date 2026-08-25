@@ -75,22 +75,30 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-// ---- In-memory cache, refreshed from IndexedDB after any mutation ----
+// ---- In-memory cache, refreshed from Firestore after any mutation ----
 const cache = { foods: [], recipes: [], dayTargets: [], overrides: [], weightLog: [], foodFrequency: new Map() };
 
-async function refreshCache() {
-  const [foods, recipes, dayTargets, overrides, weightLog] = await Promise.all([
-    db.getAll('foods'), db.getAll('recipes'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'), db.getAll('weightLog'),
+// Split so boot can paint Today (which only needs the "essential" half) as soon as possible,
+// then fill in weightLog/foodFrequency — needed only by Settings and the quick-log
+// favourites — in the background rather than making the first screen wait on them too.
+async function refreshEssentialCache() {
+  const [foods, recipes, dayTargets, overrides] = await Promise.all([
+    db.getAll('foods'), db.getAll('recipes'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'),
   ]);
   cache.foods = foods;
   cache.recipes = recipes;
   cache.dayTargets = dayTargets;
   cache.overrides = overrides;
-  cache.weightLog = weightLog.sort((a, b) => b.date.localeCompare(a.date));
+}
 
-  // How often each food has been logged recently, so the Log screen can lead with the foods
-  // actually eaten rather than whatever happens to sort first.
-  const recent = await db.entriesInRange(isoDaysAgo(60), todayISO());
+async function refreshBackgroundCache() {
+  const [weightLog, recent] = await Promise.all([
+    db.getAll('weightLog'),
+    // How often each food has been logged recently, so the Log screen can lead with the foods
+    // actually eaten rather than whatever happens to sort first.
+    db.entriesInRange(isoDaysAgo(60), todayISO()),
+  ]);
+  cache.weightLog = weightLog.sort((a, b) => b.date.localeCompare(a.date));
   const freq = new Map();
   for (const e of recent) {
     const key = e.foodId ? `food:${e.foodId}` : (e.recipeId ? `recipe:${e.recipeId}` : null);
@@ -98,6 +106,12 @@ async function refreshCache() {
     freq.set(key, (freq.get(key) ?? 0) + 1);
   }
   cache.foodFrequency = freq;
+}
+
+// Used after any mutation, where everything needs to be current — as opposed to boot, which
+// calls the two halves above separately so it can paint before the background half lands.
+async function refreshCache() {
+  await Promise.all([refreshEssentialCache(), refreshBackgroundCache()]);
 }
 
 function foodsById() { return new Map(cache.foods.map(f => [f.id, f])); }
@@ -269,6 +283,7 @@ function openLogSheet(meal) {
       <button type="button" class="meal-chip" id="sheet-meal-chip">${escapeHtml(MEAL_LABELS[meal])}</button>
     </div>
     <input class="text-input" id="sheet-search" type="text" placeholder="Search foods and recipes" autocomplete="off" style="margin-bottom:6px;">
+    <button type="button" class="link-btn" id="sheet-new-recipe" style="margin:8px 0 0;">+ Build a recipe</button>
     <div class="section-label" id="sheet-list-label" style="margin:12px 0 0;">Favourites</div>
     <div class="search-results" id="sheet-results"></div>
     <div id="sheet-amount" hidden>
@@ -310,6 +325,22 @@ function openLogSheet(meal) {
     renderSheetDraft();
   });
   document.getElementById('sheet-add').addEventListener('click', confirmSheetLog);
+  document.getElementById('sheet-new-recipe').addEventListener('click', () => {
+    const meal = sheetState.meal;
+    // openRecipeModal reuses this same single modal, so the quick-log sheet's own contents
+    // are replaced while it's open — same pattern the recipe builder itself uses for "New food".
+    openRecipeModal(null, {
+      onSaved: recipe => {
+        openLogSheet(meal);
+        if (isDraftRecipe(recipe)) {
+          toast('Saved as draft — add the cooked weight before logging it');
+        } else {
+          selectSheetItem('recipe', recipe);
+          toast(`Added ${recipe.name}`);
+        }
+      },
+    });
+  });
 
   renderSheetResults();
 }
@@ -352,24 +383,26 @@ function renderSheetResults() {
         <span class="check">${selected ? '●' : '○'}</span>
       </button>
     `);
-    btn.addEventListener('click', () => {
-      sheetState.pickedId = record.id;
-      sheetState.pickedKind = kind;
-      sheetState.grams = String(kind === 'recipe' ? onePortionGrams(record) : (record.defaultPortionG ?? 100));
-      document.getElementById('sheet-grams').value = sheetState.grams;
-      document.getElementById('sheet-amount').hidden = false;
-      const unit = sheetUnit();
-      document.getElementById('sheet-unit').textContent = unit;
-      document.getElementById('sheet-amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
-      renderSheetResults();
-      renderSheetDraft();
-    });
+    btn.addEventListener('click', () => selectSheetItem(kind, record));
     container.appendChild(btn);
   }
 
   if (q && results.length === 0) {
-    container.appendChild(el(`<div class="meal-empty">No match. Use the Log tab to add a new food.</div>`));
+    container.appendChild(el(`<div class="meal-empty">No match. Use the Log tab to add a new food, or “+ Build a recipe” above.</div>`));
   }
+}
+
+function selectSheetItem(kind, record) {
+  sheetState.pickedId = record.id;
+  sheetState.pickedKind = kind;
+  sheetState.grams = String(kind === 'recipe' ? onePortionGrams(record) : (record.defaultPortionG ?? 100));
+  document.getElementById('sheet-grams').value = sheetState.grams;
+  document.getElementById('sheet-amount').hidden = false;
+  const unit = sheetUnit();
+  document.getElementById('sheet-unit').textContent = unit;
+  document.getElementById('sheet-amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
+  renderSheetResults();
+  renderSheetDraft();
 }
 
 function renderSheetDraft() {
@@ -1134,7 +1167,7 @@ function renderRecipes() {
 
 document.getElementById('add-recipe-btn').addEventListener('click', () => openRecipeModal(null));
 
-async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {}) {
+async function openRecipeModal(recipe, { copyFrom = null, restore = null, onSaved = null } = {}) {
   const isEdit = !!recipe;
   const template = recipe ?? copyFrom;
   const ingredients = restore
@@ -1250,7 +1283,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
         const emptyRow = snapshot.rows.find(r => !r.foodId);
         if (emptyRow) emptyRow.foodId = food.id;
         else snapshot.rows.push({ foodId: food.id, grams: '' });
-        await openRecipeModal(recipe, { copyFrom, restore: snapshot });
+        await openRecipeModal(recipe, { copyFrom, restore: snapshot, onSaved });
         toast(`Added ${food.name}`);
       },
     });
@@ -1273,7 +1306,11 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
     await refreshCache();
     closeModal();
     renderRecipes();
-    if (isDraftRecipe(obj)) toast('Saved as draft — add the cooked weight when you weigh it');
+    if (onSaved) {
+      onSaved(obj);
+    } else if (isDraftRecipe(obj)) {
+      toast('Saved as draft — add the cooked weight when you weigh it');
+    }
   });
 }
 
@@ -1655,13 +1692,17 @@ async function unlockApp(user) {
   document.getElementById('app').hidden = false;
   passwordInput.value = '';
 
-  await seedSharedIfEmpty();
-  await seedUserIfEmpty();
+  // These two are independent — no reason to wait for one before starting the other.
+  await Promise.all([seedSharedIfEmpty(), seedUserIfEmpty(user.uid)]);
   await maybeOfferMigration();
-  await refreshCache();
+  await refreshEssentialCache();
   if (!location.hash) location.hash = 'today';
   renderRoute();
   hideSplash();
+
+  // Weight log and quick-log favourites aren't needed for this first paint. Fetch them after,
+  // and only pay for a second render if the screen actually on-screen turns out to use them.
+  refreshBackgroundCache().then(renderRoute).catch(() => {});
 }
 
 function showLoginScreen() {
