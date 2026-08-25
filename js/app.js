@@ -2,7 +2,7 @@ import * as db from './db.js';
 import { seedSharedIfEmpty, seedUserIfEmpty } from './seed.js';
 import {
   resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
-  foodPortionMacros, recipePerGram, validateFood, validateRecipe, formatDateHeader,
+  foodPortionMacros, recipePerGram, recipePortionMacros, validateFood, validateRecipe, formatDateHeader,
   isDraftRecipe, findSimilarFoods, unitOf,
   MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
 } from './logic.js';
@@ -283,7 +283,6 @@ function openLogSheet(meal) {
       <button type="button" class="meal-chip" id="sheet-meal-chip">${escapeHtml(MEAL_LABELS[meal])}</button>
     </div>
     <input class="text-input" id="sheet-search" type="text" placeholder="Search foods and recipes" autocomplete="off" style="margin-bottom:6px;">
-    <button type="button" class="link-btn" id="sheet-new-recipe" style="margin:8px 0 0;">+ Build a recipe</button>
     <div class="section-label" id="sheet-list-label" style="margin:12px 0 0;">Favourites</div>
     <div class="search-results" id="sheet-results"></div>
     <div id="sheet-amount" hidden>
@@ -325,22 +324,6 @@ function openLogSheet(meal) {
     renderSheetDraft();
   });
   document.getElementById('sheet-add').addEventListener('click', confirmSheetLog);
-  document.getElementById('sheet-new-recipe').addEventListener('click', () => {
-    const meal = sheetState.meal;
-    // openRecipeModal reuses this same single modal, so the quick-log sheet's own contents
-    // are replaced while it's open — same pattern the recipe builder itself uses for "New food".
-    openRecipeModal(null, {
-      onSaved: recipe => {
-        openLogSheet(meal);
-        if (isDraftRecipe(recipe)) {
-          toast('Saved as draft — add the cooked weight before logging it');
-        } else {
-          selectSheetItem('recipe', recipe);
-          toast(`Added ${recipe.name}`);
-        }
-      },
-    });
-  });
 
   renderSheetResults();
 }
@@ -383,26 +366,24 @@ function renderSheetResults() {
         <span class="check">${selected ? '●' : '○'}</span>
       </button>
     `);
-    btn.addEventListener('click', () => selectSheetItem(kind, record));
+    btn.addEventListener('click', () => {
+      sheetState.pickedId = record.id;
+      sheetState.pickedKind = kind;
+      sheetState.grams = String(kind === 'recipe' ? onePortionGrams(record) : (record.defaultPortionG ?? 100));
+      document.getElementById('sheet-grams').value = sheetState.grams;
+      document.getElementById('sheet-amount').hidden = false;
+      const unit = sheetUnit();
+      document.getElementById('sheet-unit').textContent = unit;
+      document.getElementById('sheet-amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
+      renderSheetResults();
+      renderSheetDraft();
+    });
     container.appendChild(btn);
   }
 
   if (q && results.length === 0) {
-    container.appendChild(el(`<div class="meal-empty">No match. Use the Log tab to add a new food, or “+ Build a recipe” above.</div>`));
+    container.appendChild(el(`<div class="meal-empty">No match. Use the Log tab to add a new food.</div>`));
   }
-}
-
-function selectSheetItem(kind, record) {
-  sheetState.pickedId = record.id;
-  sheetState.pickedKind = kind;
-  sheetState.grams = String(kind === 'recipe' ? onePortionGrams(record) : (record.defaultPortionG ?? 100));
-  document.getElementById('sheet-grams').value = sheetState.grams;
-  document.getElementById('sheet-amount').hidden = false;
-  const unit = sheetUnit();
-  document.getElementById('sheet-unit').textContent = unit;
-  document.getElementById('sheet-amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
-  renderSheetResults();
-  renderSheetDraft();
 }
 
 function renderSheetDraft() {
@@ -1167,7 +1148,7 @@ function renderRecipes() {
 
 document.getElementById('add-recipe-btn').addEventListener('click', () => openRecipeModal(null));
 
-async function openRecipeModal(recipe, { copyFrom = null, restore = null, onSaved = null } = {}) {
+async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {}) {
   const isEdit = !!recipe;
   const template = recipe ?? copyFrom;
   const ingredients = restore
@@ -1283,7 +1264,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null, onSave
         const emptyRow = snapshot.rows.find(r => !r.foodId);
         if (emptyRow) emptyRow.foodId = food.id;
         else snapshot.rows.push({ foodId: food.id, grams: '' });
-        await openRecipeModal(recipe, { copyFrom, restore: snapshot, onSaved });
+        await openRecipeModal(recipe, { copyFrom, restore: snapshot });
         toast(`Added ${food.name}`);
       },
     });
@@ -1306,11 +1287,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null, onSave
     await refreshCache();
     closeModal();
     renderRecipes();
-    if (onSaved) {
-      onSaved(obj);
-    } else if (isDraftRecipe(obj)) {
-      toast('Saved as draft — add the cooked weight when you weigh it');
-    }
+    if (isDraftRecipe(obj)) toast('Saved as draft — add the cooked weight when you weigh it');
   });
 }
 

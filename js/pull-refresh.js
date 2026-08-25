@@ -9,6 +9,11 @@ const DRAG_RESISTANCE = 0.4; // post-dead-zone travel is damped, same as native 
 const ARM_DISTANCE = 80;     // damped px needed to arm — works out to ~220px of real finger
                               // travel, deliberately "long" so a normal scroll can't reach it
 const MAX_REVEAL = 56;       // matches --pull-refresh height in CSS
+// A screen whose content fits the viewport (no overflow at all) reports scrollTop === 0
+// everywhere on it, top or bottom — that alone can't tell "at the top" from "at the bottom"
+// on a page like that. So the gesture must also *start* near the visible top of the screen;
+// combined with the scrollTop check below, that's what actually pins this to the top.
+const START_ZONE = 140;
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -48,10 +53,12 @@ export function initPullToRefresh() {
   document.addEventListener('touchstart', e => {
     if (document.body.classList.contains('modal-open')) return;
     if (e.touches.length !== 1) return;
+    const touchY = e.touches[0].clientY;
+    if (touchY > START_ZONE) return;
     const screen = activeScreen();
     if (!screen || screen.scrollTop > 0) return;
     startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
+    startY = touchY;
     pulling = true;
     dragging = false;
     indicator.style.transition = 'none';
