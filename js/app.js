@@ -129,8 +129,17 @@ function goTo(screen) {
   location.hash = screen;
 }
 
+let previousScreen = null;
+
 function renderRoute() {
   const screen = currentScreenFromHash();
+  // Leaving the Log tab mid-backdate shouldn't let a stale date silently carry into a later,
+  // unrelated visit — logState is defined further down but this only ever runs after the
+  // whole module has evaluated, so it's already initialized by the time this executes.
+  if (previousScreen === 'log' && screen !== 'log') {
+    logState.date = null;
+  }
+  previousScreen = screen;
   for (const s of SCREENS) {
     document.getElementById(`screen-${s}`).hidden = s !== screen;
   }
@@ -493,8 +502,9 @@ document.getElementById('export-day-btn').addEventListener('click', async () => 
 
 // ==================== LOG ENTRY ====================
 // `meal` is null until the user logs, at which point it's inferred from the clock — unless
-// they arrived via a section's "+", which sets it explicitly.
-const logState = { query: '', pickedId: null, pickedKind: null, grams: '', meal: null };
+// they arrived via a section's "+", which sets it explicitly. `date` is null until the date
+// chip is changed away from today, so logging normally needs no date handling at all.
+const logState = { query: '', pickedId: null, pickedKind: null, grams: '', meal: null, date: null };
 
 function pickedRecord() {
   if (!logState.pickedId) return null;
@@ -544,7 +554,24 @@ function renderLog() {
   const chip = document.getElementById('log-meal-chip');
   chip.textContent = MEAL_LABELS[effectiveMeal];
   chip.setAttribute('aria-label', `Meal: ${MEAL_LABELS[effectiveMeal]}. Tap to change.`);
+
+  // Backdating a missed day: defaults to today, capped so it can never be set to the future.
+  const today = todayISO();
+  const effectiveDate = logState.date ?? today;
+  const dateInput = document.getElementById('log-date-input');
+  dateInput.value = effectiveDate;
+  dateInput.max = today;
+  dateInput.setAttribute('aria-label', effectiveDate === today ? 'Change date — currently today' : `Change date — currently ${formatDateHeader(effectiveDate)}`);
+  document.getElementById('confirm-log-btn').textContent = effectiveDate === today ? 'Add to today' : `Add to ${formatDateHeader(effectiveDate)}`;
 }
+
+document.getElementById('log-date-input').addEventListener('change', e => {
+  const today = todayISO();
+  const value = e.target.value;
+  // An empty or (somehow) future value falls back to today rather than logging nothing.
+  logState.date = (!value || value > today) ? null : value;
+  renderLog();
+});
 
 // Tapping the chip cycles through the four meals — quicker than a picker for a one-off
 // correction, and the current choice is always readable on the chip itself.
@@ -760,9 +787,12 @@ document.getElementById('confirm-log-btn').addEventListener('click', async () =>
   const grams = parseInt(logState.grams, 10) || 0;
   if (!logState.pickedId || !grams) return;
   const isRecipe = logState.pickedKind === 'recipe';
+  const today = todayISO();
+  const date = logState.date ?? today;
+  const loggedName = pickedRecord()?.name;
   await db.put('logEntries', {
     id: crypto.randomUUID(),
-    date: todayISO(),
+    date,
     foodId: isRecipe ? null : logState.pickedId,
     recipeId: isRecipe ? logState.pickedId : null,
     grams,
@@ -771,7 +801,15 @@ document.getElementById('confirm-log-btn').addEventListener('click', async () =>
   });
   logState.query = ''; logState.pickedId = null; logState.pickedKind = null;
   logState.grams = ''; logState.meal = null;
-  goTo('today');
+  if (date === today) {
+    logState.date = null;
+    goTo('today');
+  } else {
+    // Backdating a missed day usually means several items at once — stay put with the same
+    // date selected instead of sending them back to Today, which wouldn't show it anyway.
+    toast(`Logged ${loggedName} to ${formatDateHeader(date)}`);
+    renderLog();
+  }
 });
 
 // ==================== FOODS ====================

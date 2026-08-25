@@ -405,6 +405,22 @@ a { color: var(--navy); }
 }
 .meal-chip:hover { background: var(--teal); color: var(--surface); border-color: var(--teal); }
 
+.chip-group { display: flex; align-items: center; gap: 8px; }
+
+.date-chip-btn {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--amber);
+  background: var(--amber-tint-bg);
+  border: 1.5px solid var(--amber-tint-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  min-height: 34px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.date-chip-btn:hover { background: var(--amber); color: var(--surface); border-color: var(--amber); }
+
 /* Log entry screen */
 .field-label {
   display: block;

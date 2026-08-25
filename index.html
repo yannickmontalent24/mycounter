@@ -98,7 +98,10 @@
   <main id="screen-log" class="screen" data-screen="log" hidden>
     <div class="screen-title-row">
       <h1 class="screen-title">Log entry</h1>
-      <button type="button" class="meal-chip" id="log-meal-chip" aria-label="Change meal">Dinner</button>
+      <div class="chip-group">
+        <input type="date" class="date-chip-btn" id="log-date-input" aria-label="Change date">
+        <button type="button" class="meal-chip" id="log-meal-chip" aria-label="Change meal">Dinner</button>
+      </div>
     </div>
 
     <label class="field-label" for="foodsearch">Food</label>
