@@ -4,6 +4,7 @@ import {
   foodPortionMacros, heroState, validateFood, validateRecipe, entryMacros,
   isDraftRecipe, findSimilarFoods, normalizeFoodName, unitOf, exportDayText,
   inferMeal, groupEntriesByMeal, sumMacros, MEALS, resolveEntriesForDisplay,
+  estimateCookedWeightG, splitFoodLibrary, sortFoods,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -366,6 +367,75 @@ test('entryMacros: resolves a recipe-based logEntry via recipeId', () => {
   const result = entryMacros(entry, foods, recipes);
   assert.equal(result.name, 'Batch A');
   assert.equal(result.kcal, Math.round((106 * 6 / 1420) * 355));
+});
+
+// --- Cooked-weight estimate (recipes shouldn't require weighing the batch up front) ---
+test('estimateCookedWeightG: applies each ingredient\'s category factor and sums the result', () => {
+  const foods = new Map([
+    ['chicken', { id: 'chicken', cookCategory: 'meat_poultry' }], // factor 0.75
+    ['rice', { id: 'rice', cookCategory: 'grain_starch' }], // factor 2.2
+  ]);
+  const est = estimateCookedWeightG(
+    [{ foodId: 'chicken', grams: 600 }, { foodId: 'rice', grams: 300 }],
+    foods,
+  );
+  assert.equal(est, Math.round(600 * 0.75 + 300 * 2.2));
+});
+
+test('estimateCookedWeightG: ignores ingredients with no known cooking category', () => {
+  const foods = new Map([
+    ['chicken', { id: 'chicken', cookCategory: 'meat_poultry' }],
+    ['mystery', { id: 'mystery' }], // no cookCategory set
+  ]);
+  const est = estimateCookedWeightG(
+    [{ foodId: 'chicken', grams: 600 }, { foodId: 'mystery', grams: 400 }],
+    foods,
+  );
+  assert.equal(est, Math.round(600 * 0.75), 'the uncategorised ingredient must not be assumed 1:1');
+});
+
+test('estimateCookedWeightG: returns null rather than 0 when nothing can be estimated', () => {
+  const foods = new Map([['mystery', { id: 'mystery' }]]);
+  assert.equal(estimateCookedWeightG([{ foodId: 'mystery', grams: 400 }], foods), null);
+  assert.equal(estimateCookedWeightG([], foods), null);
+});
+
+// --- Foods list: separating recipe-only ingredients from what's actually logged ---
+test('splitFoodLibrary: a food used only inside a recipe is filed as an ingredient', () => {
+  const foods = [{ id: 'flour', name: 'Flour' }, { id: 'banana', name: 'Banana' }];
+  const recipes = [{ id: 'r', ingredients: [{ foodId: 'flour', grams: 200 }] }];
+  const { foods: main, ingredients } = splitFoodLibrary(foods, recipes, new Set());
+  assert.deepEqual(main.map(f => f.id), ['banana']);
+  assert.deepEqual(ingredients.map(f => f.id), ['flour']);
+});
+
+test('splitFoodLibrary: a food logged directly stays in the main list even if also a recipe ingredient', () => {
+  const foods = [{ id: 'chicken', name: 'Chicken' }];
+  const recipes = [{ id: 'r', ingredients: [{ foodId: 'chicken', grams: 600 }] }];
+  const { foods: main, ingredients } = splitFoodLibrary(foods, recipes, new Set(['chicken']));
+  assert.deepEqual(main.map(f => f.id), ['chicken']);
+  assert.deepEqual(ingredients, []);
+});
+
+test('splitFoodLibrary: a food used in no recipe is always in the main list', () => {
+  const foods = [{ id: 'banana', name: 'Banana' }];
+  const { foods: main, ingredients } = splitFoodLibrary(foods, [], new Set());
+  assert.deepEqual(main.map(f => f.id), ['banana']);
+  assert.deepEqual(ingredients, []);
+});
+
+// --- Foods list sorting ---
+test('sortFoods: sorts by name, calories, protein, or logged frequency', () => {
+  const foods = [
+    { id: 'a', name: 'Banana', per100g: { kcal: 89, protein: 1.1 } },
+    { id: 'b', name: 'Almonds', per100g: { kcal: 579, protein: 21 } },
+    { id: 'c', name: 'Chicken', per100g: { kcal: 106, protein: 24 } },
+  ];
+  assert.deepEqual(sortFoods(foods, 'name').map(f => f.id), ['b', 'a', 'c']);
+  assert.deepEqual(sortFoods(foods, 'kcal').map(f => f.id), ['b', 'c', 'a']);
+  assert.deepEqual(sortFoods(foods, 'protein').map(f => f.id), ['c', 'b', 'a']);
+  const freq = { a: 10, b: 1, c: 5 };
+  assert.deepEqual(sortFoods(foods, 'frequency', id => freq[id] ?? 0).map(f => f.id), ['a', 'c', 'b']);
 });
 
 console.log(`\n${passed} passed`);

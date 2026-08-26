@@ -5,6 +5,7 @@ import {
   foodPortionMacros, recipePerGram, recipePortionMacros, validateFood, validateRecipe, formatDateHeader,
   isDraftRecipe, findSimilarFoods, unitOf,
   MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
+  COOK_CATEGORIES, estimateCookedWeightG, splitFoodLibrary, sortFoods,
 } from './logic.js';
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
@@ -162,9 +163,17 @@ window.addEventListener('hashchange', renderRoute);
 document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.go)));
 
 // ==================== TODAY ====================
+// Small inline spinner for a section whose fetch is in flight — distinct from the full-screen
+// splash, which only covers boot. Kept generic so Today, History, and the day-detail sheet
+// (whose entries are always at least one Firestore round-trip away) all show the same thing.
+function showSectionLoading(container) {
+  container.innerHTML = '<div class="section-loading"><span class="section-spinner" aria-hidden="true"></span><span>Loading…</span></div>';
+}
+
 async function renderToday() {
   const dateStr = todayISO();
   document.getElementById('today-date-chip').textContent = formatDateHeader(dateStr);
+  showSectionLoading(document.getElementById('today-entry-list'));
 
   const entries = await db.entriesInRange(dateStr, dateStr);
   const resolved = resolveEntriesForDisplay(entries, foodsById(), recipesById());
@@ -196,7 +205,9 @@ async function renderToday() {
 
 // One section per meal. Empty sections still render, because their "+" is the way to log
 // into that meal (feature brief §3) — but they stay compact so the day is still scannable.
-function buildMealSection(meal, label, entries, { canAdd }) {
+// `interactive: false` (used by the read-only day-detail view for past dates) drops the add/
+// delete/move controls and just shows what was eaten.
+function buildMealSection(meal, label, entries, { canAdd, interactive = true } = {}) {
   const totals = sumMacros(entries);
   const section = el(`
     <section class="meal-section">
@@ -224,15 +235,19 @@ function buildMealSection(meal, label, entries, { canAdd }) {
           <div>${e.kcal} kcal</div>
           <div class="protein">${e.protein} g protein</div>
         </div>
-        <button type="button" class="icon-btn-small" data-move-entry="${e.id}" aria-label="Change meal for ${escapeHtml(e.name)}">⇄</button>
-        <button type="button" class="delete-btn" aria-label="Delete ${escapeHtml(e.name)}">×</button>
+        ${interactive ? `
+          <button type="button" class="icon-btn-small" data-move-entry="${e.id}" aria-label="Change meal for ${escapeHtml(e.name)}">⇄</button>
+          <button type="button" class="delete-btn" aria-label="Delete ${escapeHtml(e.name)}">×</button>
+        ` : ''}
       </div>
     `);
-    row.querySelector('.delete-btn').addEventListener('click', async () => {
-      await db.remove('logEntries', e.id);
-      renderToday();
-    });
-    row.querySelector('[data-move-entry]').addEventListener('click', () => openMealPicker(e));
+    if (interactive) {
+      row.querySelector('.delete-btn').addEventListener('click', async () => {
+        await db.remove('logEntries', e.id);
+        renderToday();
+      });
+      row.querySelector('[data-move-entry]').addEventListener('click', () => openMealPicker(e));
+    }
     rows.appendChild(row);
   }
 
@@ -671,6 +686,14 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
       <option value="reference">reference — published table</option>
       <option value="estimate">estimate — entered by hand</option>
     </select>
+    <label class="field-label" for="q-cook-category">Cooking category (optional)</label>
+    <select class="text-input" id="q-cook-category" style="margin-bottom:6px;">
+      <option value="">No estimate</option>
+      ${COOK_CATEGORIES.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('')}
+    </select>
+    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">
+      Used to suggest this recipe's cooked weight for you.
+    </div>
     <div class="form-msg error" id="q-error" hidden></div>
     <div class="form-msg" id="q-warn" hidden style="color:var(--amber);"></div>
     <div class="modal-actions">
@@ -716,6 +739,7 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
       source: document.getElementById('q-source').value,
       unit: qUnitSelect.value,
       tags: [],
+      cookCategory: document.getElementById('q-cook-category').value || null,
     };
     const errors = validateFood(obj);
     if (errors.length) { errEl.textContent = errors.join(' '); errEl.hidden = false; return; }
@@ -814,11 +838,62 @@ document.getElementById('confirm-log-btn').addEventListener('click', async () =>
 
 // ==================== FOODS ====================
 let foodsTagFilter = 'All';
+let foodsSourceFilter = 'All';
+let foodsQuery = '';
+let foodsSort = 'name';
+let foodsIngredientsExpanded = false;
 
 function allTagsFromFoods() {
   const set = new Set();
   for (const f of cache.foods) for (const t of f.tags ?? []) set.add(t);
   return ['All', ...Array.from(set).sort()];
+}
+
+// Foods logged directly (in the frequency window used elsewhere for favourites) never count as
+// ingredient-only, however many recipes also use them — this only hides foods that are purely
+// recipe components.
+function directlyLoggedFoodIds() {
+  const set = new Set();
+  for (const key of cache.foodFrequency.keys()) {
+    if (key.startsWith('food:')) set.add(key.slice(5));
+  }
+  return set;
+}
+
+function renderFoodRow(f) {
+  const badgeBg = f.source === 'estimate' ? 'var(--red-tint-bg)' : (f.source === 'reference' ? 'var(--teal-badge-bg)' : 'var(--navy-tint-bg)');
+  const badgeColor = f.source === 'estimate' ? 'var(--red)' : (f.source === 'reference' ? 'var(--teal)' : 'var(--navy)');
+  const badgeBorder = f.source === 'estimate' ? 'var(--red-tint-border)' : (f.source === 'reference' ? 'var(--teal-tint-border)' : 'var(--navy-tint-border)');
+  const row = el(`
+    <div class="food-row">
+      <div class="main">
+        <div class="name">${escapeHtml(f.name)}</div>
+        <div class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100${unitOf(f)}</div>
+      </div>
+      <div class="source-badge" style="border:1px solid ${badgeBorder}; background:${badgeBg};">
+        <span class="glyph" style="color:${badgeColor};">${SOURCE_GLYPH[f.source] ?? '?'}</span>
+        <span class="word" style="color:${badgeColor};">${escapeHtml(f.source)}</span>
+      </div>
+      <div class="actions">
+        <button type="button" class="icon-btn-small" aria-label="Edit ${escapeHtml(f.name)}">✎</button>
+        <button type="button" class="icon-btn-small" aria-label="Delete ${escapeHtml(f.name)}">×</button>
+      </div>
+    </div>
+  `);
+  row.querySelector('[aria-label^="Edit"]').addEventListener('click', () => openFoodModal(f));
+  row.querySelector('[aria-label^="Delete"]').addEventListener('click', async () => {
+    if (!confirm(`Delete "${f.name}"? This can't be undone.`)) return;
+    await db.remove('foods', f.id);
+    await refreshCache();
+    renderFoods();
+  });
+  return row;
+}
+
+function renderFoodRows(list, rows, emptyMsg) {
+  list.innerHTML = '';
+  if (rows.length === 0) list.appendChild(el(`<div class="empty-state">${escapeHtml(emptyMsg)}</div>`));
+  for (const f of rows) list.appendChild(renderFoodRow(f));
 }
 
 function renderFoods() {
@@ -834,40 +909,41 @@ function renderFoods() {
     chipContainer.appendChild(chip);
   }
 
-  const rows = cache.foods.filter(f => foodsTagFilter === 'All' || (f.tags ?? []).includes(foodsTagFilter));
-  const list = document.getElementById('foods-list');
-  list.innerHTML = '';
-  if (rows.length === 0) list.appendChild(el(`<div class="empty-state">No foods yet. Add one, or paste from Claude.</div>`));
-  for (const f of rows) {
-    const badgeBg = f.source === 'estimate' ? 'var(--red-tint-bg)' : (f.source === 'reference' ? 'var(--teal-badge-bg)' : 'var(--navy-tint-bg)');
-    const badgeColor = f.source === 'estimate' ? 'var(--red)' : (f.source === 'reference' ? 'var(--teal)' : 'var(--navy)');
-    const badgeBorder = f.source === 'estimate' ? 'var(--red-tint-border)' : (f.source === 'reference' ? 'var(--teal-tint-border)' : 'var(--navy-tint-border)');
-    const row = el(`
-      <div class="food-row">
-        <div class="main">
-          <div class="name">${escapeHtml(f.name)}</div>
-          <div class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100${unitOf(f)}</div>
-        </div>
-        <div class="source-badge" style="border:1px solid ${badgeBorder}; background:${badgeBg};">
-          <span class="glyph" style="color:${badgeColor};">${SOURCE_GLYPH[f.source] ?? '?'}</span>
-          <span class="word" style="color:${badgeColor};">${escapeHtml(f.source)}</span>
-        </div>
-        <div class="actions">
-          <button type="button" class="icon-btn-small" aria-label="Edit ${escapeHtml(f.name)}">✎</button>
-          <button type="button" class="icon-btn-small" aria-label="Delete ${escapeHtml(f.name)}">×</button>
-        </div>
-      </div>
-    `);
-    row.querySelector('[aria-label^="Edit"]').addEventListener('click', () => openFoodModal(f));
-    row.querySelector('[aria-label^="Delete"]').addEventListener('click', async () => {
-      if (!confirm(`Delete "${f.name}"? This can't be undone.`)) return;
-      await db.remove('foods', f.id);
-      await refreshCache();
-      renderFoods();
-    });
-    list.appendChild(row);
+  const sourceContainer = document.getElementById('foods-source-chips');
+  sourceContainer.innerHTML = '';
+  for (const source of ['All', 'label', 'reference', 'estimate']) {
+    const chip = el(`<button type="button" class="tag-chip">${escapeHtml(source)}</button>`);
+    const active = foodsSourceFilter === source;
+    chip.style.background = active ? 'var(--teal)' : 'var(--surface-raised)';
+    chip.style.color = active ? 'var(--surface)' : 'var(--teal)';
+    chip.style.borderColor = active ? 'var(--teal)' : 'var(--control-border)';
+    chip.addEventListener('click', () => { foodsSourceFilter = source; renderFoods(); });
+    sourceContainer.appendChild(chip);
   }
+
+  const q = foodsQuery.trim().toLowerCase();
+  const filtered = cache.foods.filter(f => (foodsTagFilter === 'All' || (f.tags ?? []).includes(foodsTagFilter))
+    && (foodsSourceFilter === 'All' || f.source === foodsSourceFilter)
+    && (!q || f.name.toLowerCase().includes(q)));
+  const sorted = sortFoods(filtered, foodsSort, id => frequencyOf('food', id));
+  const { foods: mainRows, ingredients: ingredientRows } = splitFoodLibrary(sorted, cache.recipes, directlyLoggedFoodIds());
+
+  renderFoodRows(document.getElementById('foods-list'), mainRows, 'No foods yet. Add one, or paste from Claude.');
+
+  const toggleBtn = document.getElementById('foods-ingredients-toggle');
+  const ingList = document.getElementById('foods-ingredients-list');
+  toggleBtn.hidden = ingredientRows.length === 0;
+  toggleBtn.textContent = `Recipe ingredients (${ingredientRows.length}) ${foodsIngredientsExpanded ? '▴' : '▾'}`;
+  ingList.hidden = !foodsIngredientsExpanded;
+  if (foodsIngredientsExpanded) renderFoodRows(ingList, ingredientRows, 'No ingredient-only foods.');
 }
+
+document.getElementById('foods-search').addEventListener('input', e => { foodsQuery = e.target.value; renderFoods(); });
+document.getElementById('foods-sort').addEventListener('change', e => { foodsSort = e.target.value; renderFoods(); });
+document.getElementById('foods-ingredients-toggle').addEventListener('click', () => {
+  foodsIngredientsExpanded = !foodsIngredientsExpanded;
+  renderFoods();
+});
 
 document.getElementById('add-food-btn').addEventListener('click', () => openFoodModal(null));
 
@@ -902,6 +978,14 @@ function openFoodModal(food) {
     </select>
     <label class="field-label" for="f-tags">Tags (comma separated)</label>
     <input class="text-input" id="f-tags" style="margin-bottom:12px;" value="${isEdit ? escapeHtml((food.tags ?? []).join(', ')) : ''}">
+    <label class="field-label" for="f-cook-category">Cooking category (optional)</label>
+    <select class="text-input" id="f-cook-category" style="margin-bottom:6px;">
+      <option value="">No estimate</option>
+      ${COOK_CATEGORIES.map(c => `<option value="${c.id}" ${isEdit && food.cookCategory === c.id ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
+    </select>
+    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">
+      Used only to suggest a starting cooked weight when this food goes into a recipe.
+    </div>
     <div class="form-msg error" id="f-error" hidden></div>
     <div class="form-msg" id="f-warn" hidden style="color:var(--amber);"></div>
     <div class="modal-actions">
@@ -952,6 +1036,7 @@ function openFoodModal(food) {
       source: document.getElementById('f-source').value,
       unit: fUnitSelect.value,
       tags: document.getElementById('f-tags').value.split(',').map(t => t.trim()).filter(Boolean),
+      cookCategory: document.getElementById('f-cook-category').value || null,
     };
     const errors = validateFood(obj);
     const errEl = document.getElementById('f-error');
@@ -1112,7 +1197,7 @@ function renderRecipes() {
       <div>
         <div class="food-row" style="align-items:flex-start;">
           <div class="main">
-            <div class="name">${escapeHtml(r.name)}${draft ? ' <span class="draft-tag">draft</span>' : ''}</div>
+            <div class="name">${escapeHtml(r.name)}${draft ? ' <span class="draft-tag">draft</span>' : ''}${!draft && r.cookedWeightEstimated ? ' <span class="draft-tag">estimated</span>' : ''}</div>
             <div class="per100">${escapeHtml(perPortionText)}</div>
           </div>
           <div class="actions">
@@ -1235,6 +1320,22 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
        </div>`
     : '';
 
+  // A saved, actually-weighed cooked weight is never silently overwritten by the estimate —
+  // only a draft, or a weight that was itself only ever an estimate, keeps auto-updating as
+  // ingredients change. This is what lets a recipe be built (and logged from) without ever
+  // having to weigh the batch first — see "Shrinkage-factor estimate" in COOK_CATEGORIES.
+  let cookedManuallyEdited = restore
+    ? !!restore.cookedManuallyEdited
+    : (isEdit && recipe.cookedWeightG != null && recipe.cookedWeightEstimated !== true);
+  let initialCooked = restore ? restore.cooked : (isEdit && recipe.cookedWeightG != null ? recipe.cookedWeightG : '');
+  if (!cookedManuallyEdited && initialCooked === '') {
+    const est = estimateCookedWeightG(
+      ingredients.filter(r => r.foodId && r.grams).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
+      foodsById(),
+    );
+    if (est != null) initialCooked = est;
+  }
+
   const body = `
     <h2>${titleText}</h2>
     ${editWarning}${copyNote}
@@ -1247,10 +1348,8 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       <button type="button" class="secondary-btn" id="r-new-food" style="text-align:center;">New food</button>
     </div>
     <label class="field-label" for="r-cooked">Cooked / finished batch weight (g)</label>
-    <input class="text-input" id="r-cooked" type="number" inputmode="numeric" style="margin-bottom:6px;" value="${restore ? escapeHtml(restore.cooked) : (isEdit && recipe.cookedWeightG != null ? recipe.cookedWeightG : '')}">
-    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">
-      Leave empty to save as a draft while the batch is still cooking. You can’t log portions until it’s filled in.
-    </div>
+    <input class="text-input" id="r-cooked" type="number" inputmode="numeric" style="margin-bottom:6px;" value="${escapeHtml(String(initialCooked))}">
+    <div id="r-cooked-hint" style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;"></div>
     <label class="field-label" for="r-portions">Portions</label>
     <input class="text-input" id="r-portions" type="number" inputmode="numeric" style="margin-bottom:12px;" value="${restore ? escapeHtml(restore.portions) : (template ? template.portions : '')}">
     <div class="form-msg error" id="r-error" hidden></div>
@@ -1263,9 +1362,33 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
 
   let rows = ingredients.slice();
 
+  function updateCookedHint() {
+    const val = document.getElementById('r-cooked').value.trim();
+    document.getElementById('r-cooked-hint').textContent = (val !== '' && !cookedManuallyEdited)
+      ? 'Estimated from the ingredients — edit once you’ve weighed the real batch.'
+      : 'Leave empty to save as a draft while the batch is still cooking. You can’t log portions until it’s filled in.';
+  }
+  updateCookedHint();
+
+  function maybeAutoEstimateCooked() {
+    if (cookedManuallyEdited) return;
+    const estimate = estimateCookedWeightG(
+      rows.filter(r => r.foodId && r.grams).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
+      foodsById(),
+    );
+    if (estimate != null) document.getElementById('r-cooked').value = estimate;
+    updateCookedHint();
+  }
+
+  document.getElementById('r-cooked').addEventListener('input', () => {
+    cookedManuallyEdited = true;
+    updateCookedHint();
+  });
+
   function rerenderIngredients() {
     document.getElementById('r-ingredients').innerHTML = rows.map(ingredientRowHtml).join('');
     wireIngredientRows();
+    maybeAutoEstimateCooked();
   }
 
   function wireIngredientRows() {
@@ -1274,7 +1397,10 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       // Re-render so the amount placeholder switches to ml when a drink is chosen.
       rerenderIngredients();
     }));
-    document.querySelectorAll('[data-ing-grams]').forEach((inp, i) => inp.addEventListener('input', () => { rows[i].grams = inp.value; }));
+    document.querySelectorAll('[data-ing-grams]').forEach((inp, i) => inp.addEventListener('input', () => {
+      rows[i].grams = inp.value;
+      maybeAutoEstimateCooked();
+    }));
     document.querySelectorAll('[data-remove-ing]').forEach((btn, i) => btn.addEventListener('click', () => {
       rows.splice(i, 1);
       if (rows.length === 0) rows.push({ foodId: '', grams: '' });
@@ -1294,6 +1420,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
     const snapshot = {
       name: document.getElementById('r-name').value,
       cooked: document.getElementById('r-cooked').value,
+      cookedManuallyEdited,
       portions: document.getElementById('r-portions').value,
       rows: rows.map(r => ({ ...r })),
     };
@@ -1316,6 +1443,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       name: document.getElementById('r-name').value.trim(),
       ingredients: rows.filter(r => r.foodId).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
       cookedWeightG: cookedRaw === '' ? null : Number(cookedRaw),
+      cookedWeightEstimated: cookedRaw !== '' && !cookedManuallyEdited,
       portions: Number(document.getElementById('r-portions').value),
     };
     const errors = validateRecipe(obj, { allowDraft: true });
@@ -1410,12 +1538,15 @@ function renderWorkouts() {
 
 // ==================== HISTORY ====================
 function renderHistory() {
+  document.getElementById('history-jump-date').max = todayISO();
   renderHistoryList();
 }
 
 async function renderHistoryList() {
   const to = isoDaysAgo(1); // yesterday — today lives on the Today screen
   const from = isoDaysAgo(14);
+  const list = document.getElementById('history-list');
+  showSectionLoading(list);
   const entries = await db.entriesInRange(from, to);
   const byDate = new Map();
   for (const e of entries) {
@@ -1424,7 +1555,6 @@ async function renderHistoryList() {
   }
   const fMap = foodsById(), rMap = recipesById();
   const dates = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a));
-  const list = document.getElementById('history-list');
   list.innerHTML = '';
   if (dates.length === 0) list.appendChild(el(`<div class="empty-state">No previous days logged yet.</div>`));
   for (const dateStr of dates) {
@@ -1443,7 +1573,7 @@ async function renderHistoryList() {
     if (target.kcal != null) diffParts.push(`${Math.abs(kcalTotal - target.kcal)} kcal ${kcalTotal > target.kcal ? 'over' : 'under'}`);
     if (target.protein != null) diffParts.push(`${Math.abs(protTotal - target.protein)} g ${protTotal > target.protein ? 'over' : 'under'}`);
     const card = el(`
-      <div class="history-card" style="border:1px solid ${border}; background:${bg};">
+      <button type="button" class="history-card" style="border:1px solid ${border}; background:${bg}; text-align:left; width:100%; cursor:pointer;">
         <div class="top-row">
           <div class="date">${formatDateHeader(dateStr)}</div>
           <div class="totals-wrap" style="color:${color};">
@@ -1451,10 +1581,63 @@ async function renderHistoryList() {
           </div>
         </div>
         <div class="diff" style="color:${diffColor};">${diffParts.length ? diffParts.join(' · ') : 'no target set'}</div>
-      </div>
+      </button>
     `);
+    card.addEventListener('click', () => openDayDetailModal(dateStr));
     list.appendChild(card);
   }
+}
+
+document.getElementById('history-jump-date').addEventListener('change', e => {
+  if (e.target.value) openDayDetailModal(e.target.value);
+});
+
+// Itemised, read-only breakdown of a single date — reachable from a History card or by picking
+// a date directly, since the 14-day History list and Today's own screen otherwise leave no way
+// to see what was actually logged on an arbitrary day.
+async function openDayDetailModal(dateStr) {
+  openModal(`<h2 style="margin-bottom:14px;">${escapeHtml(formatDateHeader(dateStr))}</h2><div id="dd-body"></div>`);
+  const body = document.getElementById('dd-body');
+  showSectionLoading(body);
+
+  const entries = await db.entriesInRange(dateStr, dateStr);
+  const resolved = resolveEntriesForDisplay(entries, foodsById(), recipesById());
+  const kcalTotal = resolved.reduce((a, e) => a + e.kcal, 0);
+  const protTotal = resolved.reduce((a, e) => a + e.protein, 0);
+  const target = resolveTarget(cache.dayTargets, cache.overrides, dateStr, weekdayOf(dateStr));
+  const targetText = target.kcal != null || target.protein != null
+    ? ` · target ${target.kcal ?? '—'} kcal / ${target.protein ?? '—'} g`
+    : '';
+
+  // Bail out silently if the modal was closed while this was in flight.
+  if (!document.getElementById('dd-body')) return;
+
+  body.innerHTML = '';
+  body.appendChild(el(`<div style="font-family:var(--font-mono); font-size:0.8125rem; color:var(--text-secondary); margin-bottom:10px;">${kcalTotal} kcal · ${protTotal} g${targetText}</div>`));
+  const list = el(`<div class="entry-list"></div>`);
+  body.appendChild(list);
+
+  const { groups, unsorted } = groupEntriesByMeal(resolved);
+  for (const meal of MEALS) {
+    const entriesForMeal = groups.get(meal);
+    if (entriesForMeal.length) list.appendChild(buildMealSection(meal, MEAL_LABELS[meal], entriesForMeal, { canAdd: false, interactive: false }));
+  }
+  if (unsorted.length) list.appendChild(buildMealSection(null, 'Not assigned', unsorted, { canAdd: false, interactive: false }));
+  if (!resolved.length) list.appendChild(el(`<div class="empty-state">Nothing logged this day.</div>`));
+
+  const actions = el(`
+    <div class="modal-actions" style="margin-top:16px;">
+      <button type="button" class="secondary-btn" id="dd-copy">Copy this day for Claude</button>
+      <button type="button" class="primary-btn" id="dd-close">Close</button>
+    </div>
+  `);
+  body.appendChild(actions);
+  document.getElementById('dd-close').addEventListener('click', closeModal);
+  document.getElementById('dd-copy').addEventListener('click', async () => {
+    const text = await exportDay(dateStr);
+    const ok = await copyText(text);
+    toast(ok ? 'Copied that day' : 'Could not copy — check clipboard permission');
+  });
 }
 
 document.getElementById('export-range-btn').addEventListener('click', () => {

@@ -42,6 +42,36 @@ export function recipePerGram(recipe, foodsById) {
   };
 }
 
+// Rough per-category cooking weight change, used only to suggest a starting cooked weight so
+// a recipe is loggable as soon as its ingredients are entered — without making the batch
+// actually be weighed a precondition. Always editable, and replaced outright the moment
+// someone weighs the real batch; this is a starting point, not a substitute for that.
+export const COOK_CATEGORIES = [
+  { id: 'meat_poultry', label: 'Meat or poultry', factor: 0.75 },
+  { id: 'fish_seafood', label: 'Fish or seafood', factor: 0.80 },
+  { id: 'vegetable', label: 'Vegetable', factor: 0.90 },
+  { id: 'grain_starch', label: 'Grain, rice, pasta, or legumes', factor: 2.2 },
+  { id: 'liquid_dairy', label: 'Liquid, sauce, or dairy', factor: 1.0 },
+];
+const COOK_FACTOR = new Map(COOK_CATEGORIES.map(c => [c.id, c.factor]));
+export const VALID_COOK_CATEGORIES = new Set(COOK_CATEGORIES.map(c => c.id));
+
+// Ingredients without a cooking category (or not yet resolvable) are simply left out of the
+// estimate rather than assumed to be 1:1 — a partial estimate from known ingredients is more
+// useful than silently pretending the unknown ones don't change weight at all.
+export function estimateCookedWeightG(ingredients, foodsById) {
+  let total = 0;
+  let any = false;
+  for (const ing of ingredients) {
+    const food = foodsById.get(ing.foodId);
+    const grams = Number(ing.grams);
+    if (!food || !(grams > 0) || !COOK_FACTOR.has(food.cookCategory)) continue;
+    total += grams * COOK_FACTOR.get(food.cookCategory);
+    any = true;
+  }
+  return any ? Math.round(total) : null;
+}
+
 export function foodPortionMacros(food, grams) {
   return {
     kcal: Math.round(food.per100g.kcal * grams / 100),
@@ -173,6 +203,7 @@ export function validateFood(obj) {
   if (!obj.per100g || typeof obj.per100g.protein !== 'number') errors.push('food.per100g.protein is required');
   if (!VALID_SOURCES.has(obj.source)) errors.push(`food.source must be one of label/reference/estimate (got: ${obj.source ?? 'missing'})`);
   if (obj.unit != null && !VALID_UNITS.has(obj.unit)) errors.push(`food.unit must be "g" or "ml" (got: ${obj.unit})`);
+  if (obj.cookCategory != null && !VALID_COOK_CATEGORIES.has(obj.cookCategory)) errors.push(`food.cookCategory must be a known category (got: ${obj.cookCategory})`);
   return errors;
 }
 
@@ -219,6 +250,32 @@ export function findSimilarFoods(name, foods, { excludeId = null } = {}) {
     if (shorter.length < 4) return false;
     return candidate.includes(target) || target.includes(candidate);
   });
+}
+
+// A food used only as a recipe ingredient (never logged on its own) clutters the Foods screen,
+// which exists to choose what to log next. `loggedFoodIds` should be every food that has ever
+// been logged directly — a food moves back into the main list the moment that's true, so
+// nothing that's actually eaten on its own stays hidden away.
+export function splitFoodLibrary(foods, recipes, loggedFoodIds) {
+  const usedAsIngredient = new Set();
+  for (const r of recipes) for (const ing of r.ingredients ?? []) usedAsIngredient.add(ing.foodId);
+  const main = [], ingredients = [];
+  for (const f of foods) {
+    (usedAsIngredient.has(f.id) && !loggedFoodIds.has(f.id) ? ingredients : main).push(f);
+  }
+  return { foods: main, ingredients };
+}
+
+export const FOOD_SORTS = ['name', 'frequency', 'kcal', 'protein'];
+
+export function sortFoods(foods, sortKey, frequencyOf = () => 0) {
+  const arr = foods.slice();
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  if (sortKey === 'kcal') arr.sort((a, b) => b.per100g.kcal - a.per100g.kcal || byName(a, b));
+  else if (sortKey === 'protein') arr.sort((a, b) => b.per100g.protein - a.per100g.protein || byName(a, b));
+  else if (sortKey === 'frequency') arr.sort((a, b) => frequencyOf(b.id) - frequencyOf(a.id) || byName(a, b));
+  else arr.sort(byName);
+  return arr;
 }
 
 export function formatDateHeader(dateStr) {

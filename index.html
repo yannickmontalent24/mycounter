@@ -130,6 +130,16 @@
 
   <main id="screen-foods" class="screen" data-screen="foods" hidden>
     <h1 class="screen-title" style="margin-bottom:16px;">Foods</h1>
+    <div class="foods-toolbar">
+      <input class="text-input" id="foods-search" type="text" placeholder="Search foods" autocomplete="off">
+      <select class="text-input" id="foods-sort" aria-label="Sort foods">
+        <option value="name">Name A–Z</option>
+        <option value="frequency">Most logged</option>
+        <option value="kcal">Calories, high–low</option>
+        <option value="protein">Protein, high–low</option>
+      </select>
+    </div>
+    <div class="tag-chips source-chips" id="foods-source-chips"></div>
     <div class="tag-chips" id="foods-tag-chips"></div>
     <button type="button" class="secondary-btn" id="add-food-btn" style="margin-bottom:10px;">Add food</button>
     <button type="button" class="secondary-btn" id="paste-import-btn" style="margin-bottom:10px;">Paste from Claude</button>
@@ -140,6 +150,8 @@
       <div>□ reference — published table</div>
       <div>◇ estimate — entered by hand</div>
     </div>
+    <button type="button" class="link-btn" id="foods-ingredients-toggle" style="margin-top:18px;">Recipe ingredients (0) ▾</button>
+    <div class="entry-list" id="foods-ingredients-list" hidden></div>
   </main>
 
   <main id="screen-recipes" class="screen" data-screen="recipes" hidden>
@@ -168,6 +180,10 @@
     <div class="screen-title-row">
       <h1 class="screen-title">History</h1>
       <div class="readonly-badge">read only</div>
+    </div>
+    <div class="chip-group" style="margin-bottom:14px;">
+      <span class="section-label" style="text-transform:none; letter-spacing:0;">View a date</span>
+      <input type="date" class="date-chip-btn" id="history-jump-date" aria-label="View a specific date">
     </div>
     <button type="button" class="secondary-btn" id="export-range-btn" style="margin-bottom:14px;">Copy a date range for Claude</button>
     <div class="history-list" id="history-list"></div>

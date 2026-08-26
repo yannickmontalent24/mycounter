@@ -582,12 +582,21 @@ a { color: var(--navy); }
 .link-btn:hover { color: var(--navy); }
 
 /* Tag chips */
+.foods-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.foods-toolbar #foods-search { flex: 1; }
+.foods-toolbar #foods-sort { flex: none; width: auto; }
+
 .tag-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 18px;
 }
+.tag-chips.source-chips { margin-bottom: 12px; }
 
 .tag-chip {
   padding: 9px 14px;
@@ -788,6 +797,12 @@ a { color: var(--navy); }
 .history-list { display: flex; flex-direction: column; gap: 10px; }
 
 .history-card {
+  display: block;
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
+  margin: 0;
   border-radius: 14px;
   padding: 14px 16px;
 }
@@ -1115,6 +1130,31 @@ body.modal-open { overflow: hidden; }
 .pull-refresh.armed .pull-refresh-spinner { border-top-color: var(--teal); }
 
 .pull-refresh.loading .pull-refresh-spinner { animation: spinner-spin 0.6s linear infinite; }
+
+/* Small inline loader for a section whose data is still being fetched (Today's entry list,
+   History, the day-detail sheet) — distinct from the full-screen splash, which only covers boot. */
+.section-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.section-spinner {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--navy-tint-border);
+  border-top-color: var(--navy);
+  animation: spinner-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .section-spinner { animation: none; }
+}
 
 @keyframes spinner-spin {
   to { transform: rotate(360deg); }
