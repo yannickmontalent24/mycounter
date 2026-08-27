@@ -1819,6 +1819,20 @@ document.getElementById('export-all-btn').addEventListener('click', async () => 
 });
 
 // ==================== MODAL ====================
+// Keep the backdrop clamped to the visual viewport so a bottom-aligned sheet
+// sits above the on-screen keyboard instead of being covered by it.
+function syncModalViewport() {
+  const backdrop = document.getElementById('modal-backdrop');
+  const vv = window.visualViewport;
+  if (backdrop.hidden || !vv) return;
+  backdrop.style.setProperty('--vv-top', vv.offsetTop + 'px');
+  backdrop.style.setProperty('--vv-height', vv.height + 'px');
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncModalViewport);
+  window.visualViewport.addEventListener('scroll', syncModalViewport);
+}
+
 function openModal(bodyHtml) {
   const backdrop = document.getElementById('modal-backdrop');
   const sheet = document.getElementById('modal-sheet');
@@ -1828,12 +1842,23 @@ function openModal(bodyHtml) {
   // body, so locking body alone would do nothing here.
   document.body.classList.add('modal-open');
   sheet.scrollTop = 0;
+  syncModalViewport();
 }
 function closeModal() {
-  document.getElementById('modal-backdrop').hidden = true;
+  const backdrop = document.getElementById('modal-backdrop');
+  backdrop.hidden = true;
+  backdrop.style.removeProperty('--vv-top');
+  backdrop.style.removeProperty('--vv-height');
   document.getElementById('modal-sheet').innerHTML = '';
   document.body.classList.remove('modal-open');
 }
+// When a field inside the sheet gets focus, wait for the keyboard/viewport to
+// settle, then bring it into view within the now-shortened sheet.
+document.getElementById('modal-sheet').addEventListener('focusin', e => {
+  setTimeout(() => {
+    e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 350);
+});
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target.id === 'modal-backdrop') closeModal();
 });
