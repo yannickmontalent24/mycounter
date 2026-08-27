@@ -1819,17 +1819,26 @@ document.getElementById('export-all-btn').addEventListener('click', async () => 
 });
 
 // ==================== MODAL ====================
-// Raise the sheet above the on-screen keyboard: push it up by the keyboard's
-// height and cap its height to what's visible, using the visual viewport.
+// Lock the modal backdrop to the visual viewport (the area *above* the on-screen
+// keyboard) so the bottom-anchored sheet is never hidden behind the keyboard.
+// Without this, position:fixed on iOS is relative to the full layout viewport,
+// which extends behind the keyboard.
 function syncModalViewport() {
   const backdrop = document.getElementById('modal-backdrop');
-  const sheet = document.getElementById('modal-sheet');
   const vv = window.visualViewport;
   if (backdrop.hidden || !vv) return;
-  const keyboard = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  sheet.style.marginBottom = keyboard + 'px';
-  // Only override the CSS 85vh cap while the keyboard is actually eating space.
-  sheet.style.maxHeight = keyboard > 80 ? Math.round(vv.height - 24) + 'px' : '';
+  const s = backdrop.style;
+  s.setProperty('--vv-top', vv.offsetTop + 'px');
+  s.setProperty('--vv-left', vv.offsetLeft + 'px');
+  s.setProperty('--vv-width', vv.width + 'px');
+  s.setProperty('--vv-height', vv.height + 'px');
+}
+function clearModalViewport() {
+  const s = document.getElementById('modal-backdrop').style;
+  s.removeProperty('--vv-top');
+  s.removeProperty('--vv-left');
+  s.removeProperty('--vv-width');
+  s.removeProperty('--vv-height');
 }
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncModalViewport);
@@ -1849,18 +1858,17 @@ function openModal(bodyHtml) {
 }
 function closeModal() {
   document.getElementById('modal-backdrop').hidden = true;
-  const sheet = document.getElementById('modal-sheet');
-  sheet.innerHTML = '';
-  sheet.style.marginBottom = '';
-  sheet.style.maxHeight = '';
+  document.getElementById('modal-sheet').innerHTML = '';
+  clearModalViewport();
   document.body.classList.remove('modal-open');
 }
 // When a field inside the sheet gets focus, wait for the keyboard/viewport to
-// settle, then bring it into view within the now-shortened sheet.
+// settle, then bring it into view within the (now shorter) scrollable sheet.
 document.getElementById('modal-sheet').addEventListener('focusin', e => {
   setTimeout(() => {
+    syncModalViewport();
     e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, 350);
+  }, 300);
 });
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target.id === 'modal-backdrop') closeModal();

@@ -881,7 +881,15 @@ a { color: var(--navy); }
 /* Modal (paste-import / weight-log / export range) */
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  /* JS keeps these locked to window.visualViewport while a sheet is open, so the
+     backdrop covers only the area *above* the on-screen keyboard. Fallback to the
+     full layout viewport before JS runs / on browsers without visualViewport. */
+  top: var(--vv-top, 0px);
+  left: var(--vv-left, 0px);
+  width: var(--vv-width, 100%);
+  height: var(--vv-height, 100%);
+  right: auto;
+  bottom: auto;
   background: rgba(20, 33, 61, 0.35);
   display: flex;
   align-items: flex-end;
@@ -896,11 +904,10 @@ a { color: var(--navy); }
   width: 100%;
   max-width: 480px;
   padding: 20px 24px calc(24px + env(safe-area-inset-bottom));
-  max-height: 85vh;
+  /* 100% = the visualViewport-clamped backdrop, so the sheet never extends under
+     the keyboard; it scrolls internally instead. */
+  max-height: min(88vh, 100%);
   overflow-y: auto;
-  /* JS raises the sheet above the on-screen keyboard by setting margin-bottom to
-     the keyboard height and capping max-height to the visible viewport. */
-  transition: margin-bottom 0.15s ease;
   /* Reaching the end of the sheet must not start scrolling the page underneath. */
   overscroll-behavior: contain;
 }
