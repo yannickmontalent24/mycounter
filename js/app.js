@@ -1819,14 +1819,17 @@ document.getElementById('export-all-btn').addEventListener('click', async () => 
 });
 
 // ==================== MODAL ====================
-// Keep the backdrop clamped to the visual viewport so a bottom-aligned sheet
-// sits above the on-screen keyboard instead of being covered by it.
+// Raise the sheet above the on-screen keyboard: push it up by the keyboard's
+// height and cap its height to what's visible, using the visual viewport.
 function syncModalViewport() {
   const backdrop = document.getElementById('modal-backdrop');
+  const sheet = document.getElementById('modal-sheet');
   const vv = window.visualViewport;
   if (backdrop.hidden || !vv) return;
-  backdrop.style.setProperty('--vv-top', vv.offsetTop + 'px');
-  backdrop.style.setProperty('--vv-height', vv.height + 'px');
+  const keyboard = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  sheet.style.marginBottom = keyboard + 'px';
+  // Only override the CSS 85vh cap while the keyboard is actually eating space.
+  sheet.style.maxHeight = keyboard > 80 ? Math.round(vv.height - 24) + 'px' : '';
 }
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncModalViewport);
@@ -1845,11 +1848,11 @@ function openModal(bodyHtml) {
   syncModalViewport();
 }
 function closeModal() {
-  const backdrop = document.getElementById('modal-backdrop');
-  backdrop.hidden = true;
-  backdrop.style.removeProperty('--vv-top');
-  backdrop.style.removeProperty('--vv-height');
-  document.getElementById('modal-sheet').innerHTML = '';
+  document.getElementById('modal-backdrop').hidden = true;
+  const sheet = document.getElementById('modal-sheet');
+  sheet.innerHTML = '';
+  sheet.style.marginBottom = '';
+  sheet.style.maxHeight = '';
   document.body.classList.remove('modal-open');
 }
 // When a field inside the sheet gets focus, wait for the keyboard/viewport to

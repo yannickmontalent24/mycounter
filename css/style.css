@@ -889,9 +889,6 @@ a { color: var(--navy); }
   z-index: 20;
 }
 .modal-backdrop[hidden] { display: none; }
-/* When the keyboard is up, JS sets these to the visual viewport box so the
-   bottom-aligned sheet renders above the keyboard rather than behind it. */
-.modal-backdrop { top: var(--vv-top, 0); height: var(--vv-height, 100%); bottom: auto; }
 
 .modal-sheet {
   background: var(--surface);
@@ -899,10 +896,11 @@ a { color: var(--navy); }
   width: 100%;
   max-width: 480px;
   padding: 20px 24px calc(24px + env(safe-area-inset-bottom));
-  /* 100% keeps the sheet inside the backdrop, which JS shrinks to the visual
-     viewport when the on-screen keyboard is up so the sheet stays above it. */
-  max-height: min(85vh, 100%);
+  max-height: 85vh;
   overflow-y: auto;
+  /* JS raises the sheet above the on-screen keyboard by setting margin-bottom to
+     the keyboard height and capping max-height to the visible viewport. */
+  transition: margin-bottom 0.15s ease;
   /* Reaching the end of the sheet must not start scrolling the page underneath. */
   overscroll-behavior: contain;
 }
