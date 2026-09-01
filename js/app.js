@@ -6,6 +6,7 @@ import {
   isDraftRecipe, findSimilarFoods, unitOf,
   MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
   COOK_CATEGORIES, estimateCookedWeightG, splitFoodLibrary, sortFoods,
+  weightSeries, averageWeight,
 } from './logic.js';
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
@@ -119,7 +120,7 @@ function foodsById() { return new Map(cache.foods.map(f => [f.id, f])); }
 function recipesById() { return new Map(cache.recipes.map(r => [r.id, r])); }
 
 // ---- Routing ----
-const SCREENS = ['today', 'log', 'foods', 'recipes', 'workouts', 'history', 'settings'];
+const SCREENS = ['today', 'log', 'foods', 'recipes', 'workouts', 'history', 'weight', 'settings'];
 
 function currentScreenFromHash() {
   const h = location.hash.replace('#', '');
@@ -144,9 +145,9 @@ function renderRoute() {
   for (const s of SCREENS) {
     document.getElementById(`screen-${s}`).hidden = s !== screen;
   }
-  // History no longer has a tab of its own — it sits under Settings, so Settings stays lit
-  // while it's open rather than leaving no tab highlighted at all.
-  const tabForScreen = screen === 'history' ? 'settings' : screen;
+  // History and the body-weight log have no tab of their own — they sit under Settings, so
+  // Settings stays lit while they're open rather than leaving no tab highlighted at all.
+  const tabForScreen = (screen === 'history' || screen === 'weight') ? 'settings' : screen;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     const active = btn.dataset.go === tabForScreen;
     btn.classList.toggle('active', active);
@@ -154,7 +155,7 @@ function renderRoute() {
   });
   const renderers = {
     today: renderToday, log: renderLog, foods: renderFoods, recipes: renderRecipes,
-    workouts: renderWorkouts, history: renderHistory, settings: renderSettings,
+    workouts: renderWorkouts, history: renderHistory, weight: renderWeight, settings: renderSettings,
   };
   renderers[screen]();
 }
@@ -1697,7 +1698,7 @@ function renderSettings() {
   }
 
   renderOverrides();
-  renderWeightLog();
+  updateSettingsWeightAvg();
 }
 
 function renderOverrides() {
@@ -1767,39 +1768,156 @@ document.getElementById('add-override-btn').addEventListener('click', () => {
   });
 });
 
-function renderWeightLog() {
-  const container = document.getElementById('weight-log-list');
-  container.innerHTML = '';
-  if (cache.weightLog.length === 0) container.appendChild(el(`<div class="empty-state">No weight entries yet.</div>`));
-  for (const w of cache.weightLog) {
-    container.appendChild(el(`<div class="weight-row"><span>${w.date}</span><span>${w.kg} kg</span></div>`));
+function updateSettingsWeightAvg() {
+  const avg = averageWeight(cache.weightLog);
+  document.getElementById('settings-weight-avg').textContent = avg == null ? '—' : `${avg.toFixed(1)} kg`;
+}
+
+// ==================== BODY WEIGHT ====================
+function renderWeight() {
+  const series = weightSeries(cache.weightLog); // ascending by date
+  const avg = averageWeight(cache.weightLog);
+
+  document.getElementById('weight-avg').textContent = avg == null ? '—' : `${avg.toFixed(1)} kg`;
+  document.getElementById('weight-latest').textContent =
+    series.length ? `${series[series.length - 1].kg.toFixed(1)} kg` : '—';
+  const changeEl = document.getElementById('weight-change');
+  if (series.length < 2) {
+    changeEl.textContent = '—';
+  } else {
+    const delta = series[series.length - 1].kg - series[0].kg;
+    changeEl.textContent = `${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg`;
+  }
+
+  const chart = document.getElementById('weight-chart');
+  chart.innerHTML = '';
+  chart.appendChild(buildWeightChart(series, avg));
+
+  const list = document.getElementById('weight-entries');
+  list.innerHTML = '';
+  if (!series.length) {
+    list.appendChild(el(`<div class="empty-state">No weight entries yet.</div>`));
+    return;
+  }
+  for (const w of series.slice().reverse()) { // newest first in the list
+    const row = el(`
+      <button type="button" class="weight-entry-row">
+        <span>${escapeHtml(formatDateHeader(w.date))}</span>
+        <span>${w.kg.toFixed(1)} kg <span class="chevron" aria-hidden="true">›</span></span>
+      </button>
+    `);
+    row.addEventListener('click', () => openWeightModal(w));
+    list.appendChild(row);
   }
 }
 
-document.getElementById('add-weight-btn').addEventListener('click', () => {
+// Inline SVG line graph of the weigh-ins. X is spaced by actual date gaps (not entry index) so
+// an irregular logging cadence reads honestly. Colours are CSS vars so it tracks the theme.
+function buildWeightChart(series, avg) {
+  if (series.length < 2) {
+    return el(`<div class="empty-state">Log at least two weigh-ins to see the graph.</div>`);
+  }
+  const W = 320, H = 170, padL = 34, padR = 12, padT = 14, padB = 22;
+  const first = Date.parse(series[0].date);
+  const last = Date.parse(series[series.length - 1].date);
+  const span = Math.max(1, last - first);
+  const kgs = series.map(w => w.kg);
+  const realLo = Math.min(...kgs), realHi = Math.max(...kgs);
+  let lo = realLo, hi = realHi;
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const margin = (hi - lo) * 0.18;
+  lo -= margin; hi += margin;
+
+  const xOf = d => padL + ((Date.parse(d) - first) / span) * (W - padL - padR);
+  const yOf = kg => padT + (1 - (kg - lo) / (hi - lo)) * (H - padT - padB);
+
+  const pts = series.map(w => `${xOf(w.date).toFixed(1)},${yOf(w.kg).toFixed(1)}`).join(' ');
+  const dots = series
+    .map(w => `<circle cx="${xOf(w.date).toFixed(1)}" cy="${yOf(w.kg).toFixed(1)}" r="2.5" fill="var(--navy)"></circle>`)
+    .join('');
+
+  let avgLine = '';
+  if (avg != null && avg > lo && avg < hi) {
+    const ay = yOf(avg).toFixed(1);
+    avgLine = `
+      <line x1="${padL}" y1="${ay}" x2="${W - padR}" y2="${ay}" stroke="var(--teal)" stroke-width="1" stroke-dasharray="4 3"></line>
+      <text x="${W - padR}" y="${(yOf(avg) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--teal)">avg ${avg.toFixed(1)}</text>`;
+  }
+
+  const fmtX = d => { const [, m, day] = d.split('-'); return `${day}/${m}`; };
+
+  return el(`
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Body weight over time">
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="var(--hairline)"></line>
+      <line x1="${padL}" y1="${(H - padB)}" x2="${W - padR}" y2="${H - padB}" stroke="var(--hairline)"></line>
+      ${avgLine}
+      <polyline points="${pts}" fill="none" stroke="var(--navy)" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"></polyline>
+      ${dots}
+      <text x="${padL - 6}" y="${(yOf(realHi) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-secondary)">${realHi.toFixed(1)}</text>
+      <text x="${padL - 6}" y="${(yOf(realLo) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-secondary)">${realLo.toFixed(1)}</text>
+      <text x="${padL}" y="${H - 6}" text-anchor="start" font-size="9" fill="var(--text-secondary)">${fmtX(series[0].date)}</text>
+      <text x="${W - padR}" y="${H - 6}" text-anchor="end" font-size="9" fill="var(--text-secondary)">${fmtX(series[series.length - 1].date)}</text>
+    </svg>
+  `);
+}
+
+// Add (no arg) or edit (pass the existing { date, kg }) a weigh-in. The date is the record's
+// key, so changing it on an edit deletes the old-dated record rather than leaving a duplicate.
+function openWeightModal(existing) {
+  const isEdit = !!existing;
   const body = `
-    <h2>Log a weight</h2>
+    <h2>${isEdit ? 'Edit weight' : 'Log a weight'}</h2>
     <label class="field-label" for="w-date">Date</label>
-    <input class="text-input" id="w-date" type="date" style="margin-bottom:12px;" value="${todayISO()}">
+    <input class="text-input" id="w-date" type="date" max="${todayISO()}" style="margin-bottom:12px;" value="${isEdit ? existing.date : todayISO()}">
     <label class="field-label" for="w-kg">Weight (kg)</label>
-    <input class="text-input" id="w-kg" type="number" step="0.1" style="margin-bottom:12px;">
+    <input class="text-input" id="w-kg" type="number" step="0.1" inputmode="decimal" style="margin-bottom:12px;" value="${isEdit ? existing.kg : ''}">
+    <div class="form-msg error" id="w-error" hidden></div>
     <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="w-cancel">Cancel</button>
+      ${isEdit
+        ? '<button type="button" class="secondary-btn" id="w-delete">Delete</button>'
+        : '<button type="button" class="secondary-btn" id="w-cancel">Cancel</button>'}
       <button type="button" class="primary-btn" id="w-save">Save</button>
     </div>
   `;
   openModal(body);
-  document.getElementById('w-cancel').addEventListener('click', closeModal);
+
+  const cancelBtn = document.getElementById('w-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  const deleteBtn = document.getElementById('w-delete');
+  if (deleteBtn) deleteBtn.addEventListener('click', async () => {
+    await db.remove('weightLog', existing.date);
+    await refreshCache();
+    closeModal();
+    afterWeightChange('Weight entry deleted');
+  });
+
   document.getElementById('w-save').addEventListener('click', async () => {
     const date = document.getElementById('w-date').value;
     const kg = Number(document.getElementById('w-kg').value);
-    if (!date || !kg) return;
+    const errEl = document.getElementById('w-error');
+    if (!date || !(kg > 0)) {
+      errEl.textContent = 'Enter a date and a weight above zero.';
+      errEl.hidden = false;
+      return;
+    }
+    if (isEdit && existing.date !== date) await db.remove('weightLog', existing.date);
     await db.put('weightLog', { date, kg });
     await refreshCache();
     closeModal();
-    renderWeightLog();
+    afterWeightChange('Weight saved');
   });
-});
+}
+
+function afterWeightChange(msg) {
+  renderWeight();
+  updateSettingsWeightAvg();
+  toast(msg);
+}
+
+document.getElementById('weight-add-btn').addEventListener('click', () => openWeightModal());
+document.getElementById('open-weight-btn').addEventListener('click', () => goTo('weight'));
+document.getElementById('weight-back').addEventListener('click', () => goTo('settings'));
 
 document.getElementById('open-history-btn').addEventListener('click', () => goTo('history'));
 document.getElementById('history-back').addEventListener('click', () => goTo('settings'));

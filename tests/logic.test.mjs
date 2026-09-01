@@ -5,6 +5,7 @@ import {
   isDraftRecipe, findSimilarFoods, normalizeFoodName, unitOf, exportDayText,
   inferMeal, groupEntriesByMeal, sumMacros, MEALS, resolveEntriesForDisplay,
   estimateCookedWeightG, splitFoodLibrary, sortFoods,
+  weightSeries, averageWeight,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -436,6 +437,30 @@ test('sortFoods: sorts by name, calories, protein, or logged frequency', () => {
   assert.deepEqual(sortFoods(foods, 'protein').map(f => f.id), ['c', 'b', 'a']);
   const freq = { a: 10, b: 1, c: 5 };
   assert.deepEqual(sortFoods(foods, 'frequency', id => freq[id] ?? 0).map(f => f.id), ['a', 'c', 'b']);
+});
+
+// --- Body weight log ---
+test('weightSeries: sorts ascending by date and drops malformed rows', () => {
+  const log = [
+    { date: '2026-02-10', kg: 80.4 },
+    { date: '2026-01-05', kg: 81.2 },
+    { date: 'bad-date', kg: 79 },
+    { date: '2026-03-01', kg: 0 },
+    { date: '2026-03-02', kg: -5 },
+    { date: '2026-02-20', kg: 79.9 },
+  ];
+  assert.deepEqual(weightSeries(log).map(w => w.date), ['2026-01-05', '2026-02-10', '2026-02-20']);
+});
+
+test('averageWeight: mean of valid entries, null when none', () => {
+  assert.equal(averageWeight([]), null);
+  assert.equal(averageWeight([{ date: 'x', kg: 5 }]), null);
+  const avg = averageWeight([
+    { date: '2026-01-01', kg: 80 },
+    { date: '2026-01-02', kg: 82 },
+    { date: '2026-01-03', kg: 84 },
+  ]);
+  assert.equal(avg, 82);
 });
 
 console.log(`\n${passed} passed`);

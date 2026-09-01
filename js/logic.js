@@ -285,6 +285,22 @@ export function formatDateHeader(dateStr) {
   return `${dayName} ${d} ${date.toLocaleDateString('en-GB', { month: 'short' })}`;
 }
 
+// ---- Body weight log ----
+// The log is a list of { date: 'YYYY-MM-DD', kg: number }. One entry per date (date is the
+// document key), so editing a weigh-in that keeps its date overwrites in place.
+export function weightSeries(weightLog) {
+  return (weightLog ?? [])
+    .filter(w => typeof w.kg === 'number' && w.kg > 0 && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function averageWeight(weightLog) {
+  const s = weightSeries(weightLog);
+  if (!s.length) return null;
+  return s.reduce((sum, w) => sum + w.kg, 0) / s.length;
+}
+
 export function exportDayText(dateStr, resolvedEntries, target) {
   const header = `${dateStr} (${formatDateHeader(dateStr).split(' ')[0]})`;
   const lines = resolvedEntries.map(e => `${e.name} ${e.grams}${e.unit ?? 'g'} — ${e.kcal} kcal, ${e.protein.toFixed(1)} P`);

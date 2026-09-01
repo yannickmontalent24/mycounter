@@ -189,6 +189,31 @@
     <div class="history-list" id="history-list"></div>
   </main>
 
+  <main id="screen-weight" class="screen" data-screen="weight" hidden>
+    <button type="button" class="link-btn" id="weight-back" style="margin-bottom:10px;">← Back to settings</button>
+    <h1 class="screen-title" style="margin-bottom:16px;">Body weight</h1>
+
+    <div class="weight-summary">
+      <div class="weight-summary-stat">
+        <span class="weight-summary-label">Average</span>
+        <span class="weight-summary-value" id="weight-avg">—</span>
+      </div>
+      <div class="weight-summary-stat">
+        <span class="weight-summary-label">Latest</span>
+        <span class="weight-summary-value" id="weight-latest">—</span>
+      </div>
+      <div class="weight-summary-stat">
+        <span class="weight-summary-label">Change</span>
+        <span class="weight-summary-value" id="weight-change">—</span>
+      </div>
+    </div>
+
+    <div class="weight-chart-wrap" id="weight-chart"></div>
+
+    <button type="button" class="secondary-btn" id="weight-add-btn" style="margin:16px 0 10px;">Log a weight</button>
+    <div class="entry-list" id="weight-entries"></div>
+  </main>
+
   <main id="screen-settings" class="screen" data-screen="settings" hidden>
     <h1 class="screen-title" style="margin-bottom:20px;">Settings</h1>
 
@@ -205,8 +230,11 @@
 
     <div class="settings-section">
       <div class="section-label" style="margin-bottom:10px;">Body weight</div>
-      <div id="weight-log-list"></div>
-      <button type="button" class="secondary-btn" id="add-weight-btn" style="margin-top:10px;">Log a weight</button>
+      <div class="weight-row" style="margin-bottom:10px;">
+        <span>Average</span>
+        <span id="settings-weight-avg">—</span>
+      </div>
+      <button type="button" class="secondary-btn" id="open-weight-btn">Open body weight log</button>
     </div>
 
     <div class="settings-section">
