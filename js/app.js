@@ -5,7 +5,7 @@ import {
   foodPortionMacros, recipePerGram, recipePortionMacros, validateFood, validateRecipe, formatDateHeader,
   isDraftRecipe, findSimilarFoods, unitOf,
   MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
-  COOK_CATEGORIES, estimateCookedWeightG, splitFoodLibrary, sortFoods,
+  COOK_CATEGORIES, estimateCookedWeightG, splitFoodLibrary, sortFoods, FOOD_SORTS,
   weightSeries, averageWeight,
 } from './logic.js';
 import {
@@ -844,6 +844,20 @@ let foodsQuery = '';
 let foodsSort = 'name';
 let foodsIngredientsExpanded = false;
 
+const FOOD_SORT_LABELS = {
+  name: 'Name A–Z', frequency: 'Most logged', kcal: 'Calories, high–low', protein: 'Protein, high–low',
+};
+const FOOD_SOURCES = ['All', 'label', 'reference', 'estimate'];
+
+// Non-default filter/sort state — drives both the toolbar badge count and the summary chips.
+function activeFoodFilters() {
+  const out = [];
+  if (foodsSort !== 'name') out.push({ label: FOOD_SORT_LABELS[foodsSort], clear: () => { foodsSort = 'name'; } });
+  if (foodsSourceFilter !== 'All') out.push({ label: foodsSourceFilter, clear: () => { foodsSourceFilter = 'All'; } });
+  if (foodsTagFilter !== 'All') out.push({ label: foodsTagFilter, clear: () => { foodsTagFilter = 'All'; } });
+  return out;
+}
+
 function allTagsFromFoods() {
   const set = new Set();
   for (const f of cache.foods) for (const t of f.tags ?? []) set.add(t);
@@ -898,28 +912,19 @@ function renderFoodRows(list, rows, emptyMsg) {
 }
 
 function renderFoods() {
-  const chipContainer = document.getElementById('foods-tag-chips');
-  chipContainer.innerHTML = '';
-  for (const tag of allTagsFromFoods()) {
-    const chip = el(`<button type="button" class="tag-chip">${escapeHtml(tag)}</button>`);
-    const active = foodsTagFilter === tag;
-    chip.style.background = active ? 'var(--navy)' : 'var(--surface-raised)';
-    chip.style.color = active ? 'var(--surface)' : 'var(--navy)';
-    chip.style.borderColor = active ? 'var(--navy)' : 'var(--control-border)';
-    chip.addEventListener('click', () => { foodsTagFilter = tag; renderFoods(); });
-    chipContainer.appendChild(chip);
-  }
+  const filters = activeFoodFilters();
+  const filterBtn = document.getElementById('foods-filter-btn');
+  filterBtn.textContent = filters.length ? `Filter & sort · ${filters.length}` : 'Filter & sort';
+  filterBtn.classList.toggle('active', filters.length > 0);
 
-  const sourceContainer = document.getElementById('foods-source-chips');
-  sourceContainer.innerHTML = '';
-  for (const source of ['All', 'label', 'reference', 'estimate']) {
-    const chip = el(`<button type="button" class="tag-chip">${escapeHtml(source)}</button>`);
-    const active = foodsSourceFilter === source;
-    chip.style.background = active ? 'var(--teal)' : 'var(--surface-raised)';
-    chip.style.color = active ? 'var(--surface)' : 'var(--teal)';
-    chip.style.borderColor = active ? 'var(--teal)' : 'var(--control-border)';
-    chip.addEventListener('click', () => { foodsSourceFilter = source; renderFoods(); });
-    sourceContainer.appendChild(chip);
+  const summary = document.getElementById('foods-active-filters');
+  summary.innerHTML = '';
+  summary.hidden = filters.length === 0;
+  for (const f of filters) {
+    const chip = el(`<button type="button" class="active-filter-chip">${escapeHtml(f.label)} <span aria-hidden="true">✕</span></button>`);
+    chip.setAttribute('aria-label', `Clear filter: ${f.label}`);
+    chip.addEventListener('click', () => { f.clear(); renderFoods(); });
+    summary.appendChild(chip);
   }
 
   const q = foodsQuery.trim().toLowerCase();
@@ -940,13 +945,61 @@ function renderFoods() {
 }
 
 document.getElementById('foods-search').addEventListener('input', e => { foodsQuery = e.target.value; renderFoods(); });
-document.getElementById('foods-sort').addEventListener('change', e => { foodsSort = e.target.value; renderFoods(); });
+document.getElementById('foods-filter-btn').addEventListener('click', openFoodsFilterSheet);
 document.getElementById('foods-ingredients-toggle').addEventListener('click', () => {
   foodsIngredientsExpanded = !foodsIngredientsExpanded;
   renderFoods();
 });
 
 document.getElementById('add-food-btn').addEventListener('click', () => openFoodModal(null));
+
+// One sheet for every way the list can be narrowed or reordered — keeps the page itself down to
+// a search box and a single button. Taps apply live (the list re-renders behind the sheet);
+// Done just closes it.
+function openFoodsFilterSheet() {
+  const chipRow = (group, values, labelOf, current) => `
+    <div class="tag-chips filter-chips" data-group="${group}">
+      ${values.map(v => `<button type="button" class="tag-chip${v === current ? ' active' : ''}" data-value="${escapeHtml(v)}">${escapeHtml(labelOf(v))}</button>`).join('')}
+    </div>`;
+  const tags = allTagsFromFoods();
+  const body = `
+    <h2>Filter &amp; sort</h2>
+    <div class="section-label" style="margin-bottom:8px;">Sort by</div>
+    ${chipRow('sort', FOOD_SORTS, v => FOOD_SORT_LABELS[v], foodsSort)}
+    <div class="section-label" style="margin:16px 0 8px;">Source</div>
+    ${chipRow('source', FOOD_SOURCES, v => v, foodsSourceFilter)}
+    ${tags.length > 1 ? `<div class="section-label" style="margin:16px 0 8px;">Tag</div>${chipRow('tag', tags, v => v, foodsTagFilter)}` : ''}
+    <div class="modal-actions" style="margin-top:20px;">
+      <button type="button" class="secondary-btn" id="foods-filter-reset">Reset</button>
+      <button type="button" class="primary-btn" id="foods-filter-done">Done</button>
+    </div>
+  `;
+  openModal(body);
+
+  document.querySelectorAll('#modal-sheet .filter-chips').forEach(row => {
+    row.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-value]');
+      if (!btn) return;
+      const value = btn.dataset.value;
+      if (row.dataset.group === 'sort') foodsSort = value;
+      else if (row.dataset.group === 'source') foodsSourceFilter = value;
+      else foodsTagFilter = value;
+      row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      renderFoods();
+    });
+  });
+
+  document.getElementById('foods-filter-reset').addEventListener('click', () => {
+    foodsSort = 'name'; foodsSourceFilter = 'All'; foodsTagFilter = 'All';
+    document.querySelectorAll('#modal-sheet .filter-chips').forEach(row => {
+      row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.value === (
+        row.dataset.group === 'sort' ? 'name' : 'All'
+      )));
+    });
+    renderFoods();
+  });
+  document.getElementById('foods-filter-done').addEventListener('click', closeModal);
+}
 
 function openFoodModal(food) {
   const isEdit = !!food;

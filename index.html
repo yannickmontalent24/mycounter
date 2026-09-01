@@ -129,29 +129,27 @@
   </main>
 
   <main id="screen-foods" class="screen" data-screen="foods" hidden>
-    <h1 class="screen-title" style="margin-bottom:16px;">Foods</h1>
+    <div class="screen-title-row">
+      <h1 class="screen-title">Foods</h1>
+      <button type="button" class="pill-btn" id="add-food-btn">+ Add food</button>
+    </div>
+
     <div class="foods-toolbar">
       <input class="text-input" id="foods-search" type="text" placeholder="Search foods" autocomplete="off">
-      <select class="text-input" id="foods-sort" aria-label="Sort foods">
-        <option value="name">Name A–Z</option>
-        <option value="frequency">Most logged</option>
-        <option value="kcal">Calories, high–low</option>
-        <option value="protein">Protein, high–low</option>
-      </select>
+      <button type="button" class="pill-btn" id="foods-filter-btn" aria-haspopup="dialog">Filter &amp; sort</button>
     </div>
-    <div class="tag-chips source-chips" id="foods-source-chips"></div>
-    <div class="tag-chips" id="foods-tag-chips"></div>
-    <button type="button" class="secondary-btn" id="add-food-btn" style="margin-bottom:10px;">Add food</button>
-    <button type="button" class="secondary-btn" id="paste-import-btn" style="margin-bottom:10px;">Paste from Claude</button>
-    <button type="button" class="secondary-btn" id="copy-library-btn" style="margin-bottom:14px;">Copy my food list for Claude</button>
+
+    <div class="active-filters" id="foods-active-filters" hidden></div>
+
     <div class="entry-list" id="foods-list"></div>
-    <div class="legend">
-      <div>■ label — from packaging</div>
-      <div>□ reference — published table</div>
-      <div>◇ estimate — entered by hand</div>
-    </div>
+
     <button type="button" class="link-btn" id="foods-ingredients-toggle" style="margin-top:18px;">Recipe ingredients (0) ▾</button>
     <div class="entry-list" id="foods-ingredients-list" hidden></div>
+
+    <div class="foods-claude-actions">
+      <button type="button" class="link-btn" id="paste-import-btn">Paste from Claude</button>
+      <button type="button" class="link-btn" id="copy-library-btn">Copy list for Claude</button>
+    </div>
   </main>
 
   <main id="screen-recipes" class="screen" data-screen="recipes" hidden>
