@@ -1923,7 +1923,7 @@ function openWeightModal(existing) {
     <label class="field-label" for="w-date">Date</label>
     <input class="text-input" id="w-date" type="date" max="${todayISO()}" style="margin-bottom:12px;" value="${isEdit ? existing.date : todayISO()}">
     <label class="field-label" for="w-kg">Weight (kg)</label>
-    <input class="text-input" id="w-kg" type="number" step="0.1" inputmode="decimal" style="margin-bottom:12px;" value="${isEdit ? existing.kg : ''}">
+    <input class="text-input" id="w-kg" type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" style="margin-bottom:12px;" value="${isEdit ? existing.kg : ''}">
     <div class="form-msg error" id="w-error" hidden></div>
     <div class="modal-actions">
       ${isEdit
@@ -1947,7 +1947,7 @@ function openWeightModal(existing) {
 
   document.getElementById('w-save').addEventListener('click', async () => {
     const date = document.getElementById('w-date').value;
-    const kg = Number(document.getElementById('w-kg').value);
+    const kg = Number(document.getElementById('w-kg').value.trim().replace(',', '.'));
     const errEl = document.getElementById('w-error');
     if (!date || !(kg > 0)) {
       errEl.textContent = 'Enter a date and a weight above zero.';
