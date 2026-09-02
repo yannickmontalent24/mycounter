@@ -130,32 +130,42 @@
 
   <main id="screen-foods" class="screen" data-screen="foods" hidden>
     <div class="screen-title-row">
-      <h1 class="screen-title">Foods</h1>
-      <button type="button" class="pill-btn" id="add-food-btn">+ Add food</button>
+      <h1 class="screen-title">Library</h1>
+      <button type="button" class="pill-btn" id="library-add-btn">+ Add food</button>
     </div>
 
-    <div class="foods-toolbar">
-      <input class="text-input" id="foods-search" type="text" placeholder="Search foods" autocomplete="off">
-      <button type="button" class="pill-btn" id="foods-filter-btn" aria-haspopup="dialog">Filter &amp; sort</button>
+    <div class="tag-chips" id="library-mode-chips">
+      <button type="button" class="tag-chip active" data-mode="foods">Foods</button>
+      <button type="button" class="tag-chip" data-mode="recipes">Recipes</button>
+      <button type="button" class="tag-chip" data-mode="bundles">Bundles</button>
     </div>
 
-    <div class="active-filters" id="foods-active-filters" hidden></div>
+    <div id="library-foods-panel">
+      <div class="foods-toolbar">
+        <input class="text-input" id="foods-search" type="text" placeholder="Search foods" autocomplete="off">
+        <button type="button" class="pill-btn" id="foods-filter-btn" aria-haspopup="dialog">Filter &amp; sort</button>
+      </div>
 
-    <div class="entry-list" id="foods-list"></div>
+      <div class="active-filters" id="foods-active-filters" hidden></div>
 
-    <button type="button" class="link-btn" id="foods-ingredients-toggle" style="margin-top:18px;">Recipe ingredients (0) ▾</button>
-    <div class="entry-list" id="foods-ingredients-list" hidden></div>
+      <div class="entry-list" id="foods-list"></div>
 
-    <div class="foods-claude-actions">
-      <button type="button" class="link-btn" id="paste-import-btn">Paste from Claude</button>
-      <button type="button" class="link-btn" id="copy-library-btn">Copy list for Claude</button>
+      <button type="button" class="link-btn" id="foods-ingredients-toggle" style="margin-top:18px;">Recipe ingredients (0) ▾</button>
+      <div class="entry-list" id="foods-ingredients-list" hidden></div>
+
+      <div class="foods-claude-actions">
+        <button type="button" class="link-btn" id="paste-import-btn">Paste from Claude</button>
+        <button type="button" class="link-btn" id="copy-library-btn">Copy list for Claude</button>
+      </div>
     </div>
-  </main>
 
-  <main id="screen-recipes" class="screen" data-screen="recipes" hidden>
-    <h1 class="screen-title" style="margin-bottom:16px;">Recipes</h1>
-    <button type="button" class="secondary-btn" id="add-recipe-btn" style="margin-bottom:14px;">Build a recipe</button>
-    <div class="entry-list" id="recipes-list"></div>
+    <div id="library-recipes-panel" hidden>
+      <div class="entry-list" id="recipes-list"></div>
+    </div>
+
+    <div id="library-bundles-panel" hidden>
+      <div class="entry-list" id="bundles-list"></div>
+    </div>
   </main>
 
   <main id="screen-workouts" class="screen" data-screen="workouts" hidden>
@@ -264,11 +274,8 @@
     <button type="button" class="tab-btn" data-go="log" aria-label="Log entry">
       <span class="icon" aria-hidden="true">⊕</span><span>Log</span><span class="indicator" aria-hidden="true"></span>
     </button>
-    <button type="button" class="tab-btn" data-go="foods" aria-label="Foods">
-      <span class="icon" aria-hidden="true">▤</span><span>Foods</span><span class="indicator" aria-hidden="true"></span>
-    </button>
-    <button type="button" class="tab-btn" data-go="recipes" aria-label="Recipes">
-      <span class="icon" aria-hidden="true">⊞</span><span>Recipes</span><span class="indicator" aria-hidden="true"></span>
+    <button type="button" class="tab-btn" data-go="foods" aria-label="Library">
+      <span class="icon" aria-hidden="true">▤</span><span>Library</span><span class="indicator" aria-hidden="true"></span>
     </button>
     <button type="button" class="tab-btn" data-go="workouts" aria-label="Workouts">
       <span class="icon" aria-hidden="true">◫</span><span>Gym</span><span class="indicator" aria-hidden="true"></span>

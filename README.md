@@ -71,13 +71,14 @@ Three ways in, in rough order of how often you'll use them:
 
 - **Quick add from the Log screen.** Search for something that isn't in your library and a
   `+ Add "…" as a new food` row appears in the results. Five fields, then it selects the new
-  food and drops you straight back into logging it — no trip to the Foods tab.
-- **Paste from Claude.** Foods tab → "Paste from Claude". "Paste from clipboard" reads it
-  directly, or paste into the box. You then get a **review step** listing every item as either
-  `new` or already-in-your-library, with Skip/Replace per clash — one duplicate no longer
+  food and drops you straight back into logging it — no trip to the Library tab.
+- **Paste from Claude.** Library tab (Foods mode) → "Paste from Claude". "Paste from clipboard"
+  reads it directly, or paste into the box. You then get a **review step** listing every item as
+  either `new` or already-in-your-library, with Skip/Replace per clash — one duplicate no longer
   rejects the whole paste. "Copy my food list for Claude" copies a compact id/name list to paste
   at the start of a Claude conversation so it stops proposing ids you already have.
-- **Add food / Build a recipe** on the Foods and Recipes tabs, for full control over every field.
+- **Add food / Build a recipe / New bundle** on the Library tab's Foods, Recipes, and Bundles
+  modes, for full control over every field.
 
 Near-duplicate names ("Chicken breast" vs "Chicken breast, raw") trigger a warning on save;
 tap Save twice to add anyway.

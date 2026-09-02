@@ -6,6 +6,7 @@ import {
   inferMeal, groupEntriesByMeal, sumMacros, MEALS, resolveEntriesForDisplay,
   estimateCookedWeightG, splitFoodLibrary, sortFoods,
   weightSeries, averageWeight,
+  bundleItemMacros, bundleMacros, validateBundle,
 } from '../js/logic.js';
 
 let passed = 0;
@@ -461,6 +462,47 @@ test('averageWeight: mean of valid entries, null when none', () => {
     { date: '2026-01-03', kg: 84 },
   ]);
   assert.equal(avg, 82);
+});
+
+// --- Meal bundles ---
+test('bundleItemMacros: resolves a food item and a recipe item the same way entryMacros does', () => {
+  const foods = new Map([
+    ['granola', { id: 'granola', name: 'Granola', per100g: { kcal: 491, protein: 22 } }],
+  ]);
+  const recipes = new Map([
+    ['stew', { id: 'stew', name: 'Stew', ingredients: [{ foodId: 'granola', grams: 100 }], cookedWeightG: 200, portions: 2 }],
+  ]);
+  const foodItem = bundleItemMacros({ kind: 'food', id: 'granola', grams: 50 }, foods, recipes);
+  assert.equal(foodItem.name, 'Granola');
+  assert.equal(foodItem.kcal, Math.round(491 * 0.5));
+
+  const recipeItem = bundleItemMacros({ kind: 'recipe', id: 'stew', grams: 100 }, foods, recipes);
+  assert.equal(recipeItem.name, 'Stew');
+  assert.equal(recipeItem.unit, 'g');
+});
+
+test('bundleMacros: sums every item, skipping one whose food/recipe no longer exists', () => {
+  const foods = new Map([
+    ['granola', { id: 'granola', name: 'Granola', per100g: { kcal: 491, protein: 22 } }],
+    ['yogurt', { id: 'yogurt', name: 'Yogurt', per100g: { kcal: 61, protein: 10 } }],
+  ]);
+  const bundle = {
+    id: 'breakfast', name: 'Breakfast',
+    items: [
+      { kind: 'food', id: 'granola', grams: 50 },
+      { kind: 'food', id: 'yogurt', grams: 150 },
+      { kind: 'food', id: 'deleted-food', grams: 30 },
+    ],
+  };
+  const totals = bundleMacros(bundle, foods, new Map());
+  assert.equal(totals.kcal, Math.round(491 * 0.5) + Math.round(61 * 1.5));
+});
+
+test('validateBundle: requires a name and at least one well-formed item', () => {
+  assert.deepEqual(validateBundle({ id: 'b1', name: 'Breakfast', items: [{ kind: 'food', id: 'granola', grams: 50 }] }), []);
+  assert.ok(validateBundle({ id: 'b1', name: '', items: [] }).length > 0);
+  assert.ok(validateBundle({ id: 'b1', name: 'X', items: [{ kind: 'sandwich', id: 'granola', grams: 50 }] }).length > 0);
+  assert.ok(validateBundle({ id: 'b1', name: 'X', items: [{ kind: 'food', id: 'granola', grams: 0 }] }).length > 0);
 });
 
 console.log(`\n${passed} passed`);

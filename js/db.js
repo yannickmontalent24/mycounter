@@ -7,7 +7,7 @@ import {
 // lives under that account's own uid and is unreachable by the other (enforced server-side
 // by firestore.rules, not by this code).
 const SHARED_STORES = new Set(['foods', 'recipes']);
-const USER_STORES = new Set(['logEntries', 'dayTargets', 'dayTargetOverrides', 'weightLog', 'meta']);
+const USER_STORES = new Set(['logEntries', 'dayTargets', 'dayTargetOverrides', 'weightLog', 'bundles', 'meta']);
 
 // Which field of each record is its document id.
 const KEY_FIELD = {
@@ -17,6 +17,7 @@ const KEY_FIELD = {
   dayTargets: 'weekday',
   dayTargetOverrides: 'date',
   weightLog: 'date',
+  bundles: 'id',
   meta: 'key',
 };
 

@@ -231,6 +231,39 @@ export function isDraftRecipe(recipe) {
   return recipe.cookedWeightG == null || !(recipe.cookedWeightG > 0);
 }
 
+// ---- Meal bundles ----
+// A bundle is a named, personal shortcut for foods/recipes you log together (a usual
+// breakfast, say). Logging one fans out into ordinary logEntries — one per item — rather than
+// creating a new kind of entry, so every other piece of logic (editing, deleting, totals,
+// history) needs no bundle-awareness at all.
+export function bundleItemMacros(item, foodsById, recipesById) {
+  return entryMacros({
+    foodId: item.kind === 'food' ? item.id : null,
+    recipeId: item.kind === 'recipe' ? item.id : null,
+    grams: item.grams,
+  }, foodsById, recipesById);
+}
+
+export function bundleMacros(bundle, foodsById, recipesById) {
+  return bundle.items.reduce((acc, item) => {
+    const m = bundleItemMacros(item, foodsById, recipesById);
+    return m ? { kcal: acc.kcal + m.kcal, protein: acc.protein + m.protein } : acc;
+  }, { kcal: 0, protein: 0 });
+}
+
+export function validateBundle(obj) {
+  const errors = [];
+  if (typeof obj.id !== 'string' || !obj.id) errors.push('bundle.id is required');
+  if (typeof obj.name !== 'string' || !obj.name) errors.push('bundle.name is required');
+  if (!Array.isArray(obj.items) || obj.items.length === 0) errors.push('bundle.items must be a non-empty array');
+  else for (const item of obj.items) {
+    if (item.kind !== 'food' && item.kind !== 'recipe') errors.push('bundle.items[].kind must be "food" or "recipe"');
+    if (typeof item.id !== 'string' || !item.id) errors.push('bundle.items[].id is required');
+    if (typeof item.grams !== 'number' || item.grams <= 0) errors.push('bundle.items[].grams must be a positive number');
+  }
+  return errors;
+}
+
 // Loose name matching, to warn before the library fills up with "Chicken breast",
 // "Chicken breast, raw" and "chicken" as three separate foods.
 export function normalizeFoodName(name) {

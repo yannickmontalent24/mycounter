@@ -7,6 +7,7 @@ import {
   MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
   COOK_CATEGORIES, estimateCookedWeightG, splitFoodLibrary, sortFoods, FOOD_SORTS,
   weightSeries, averageWeight,
+  bundleMacros, bundleItemMacros, validateBundle,
 } from './logic.js';
 import {
   exportDay, exportRange, prepareImport, commitImport, exportLibraryForClaude, ImportError,
@@ -78,17 +79,18 @@ function toast(msg) {
 }
 
 // ---- In-memory cache, refreshed from Firestore after any mutation ----
-const cache = { foods: [], recipes: [], dayTargets: [], overrides: [], weightLog: [], foodFrequency: new Map() };
+const cache = { foods: [], recipes: [], bundles: [], dayTargets: [], overrides: [], weightLog: [], foodFrequency: new Map() };
 
 // Split so boot can paint Today (which only needs the "essential" half) as soon as possible,
 // then fill in weightLog/foodFrequency — needed only by Settings and the quick-log
 // favourites — in the background rather than making the first screen wait on them too.
 async function refreshEssentialCache() {
-  const [foods, recipes, dayTargets, overrides] = await Promise.all([
-    db.getAll('foods'), db.getAll('recipes'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'),
+  const [foods, recipes, bundles, dayTargets, overrides] = await Promise.all([
+    db.getAll('foods'), db.getAll('recipes'), db.getAll('bundles'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'),
   ]);
   cache.foods = foods;
   cache.recipes = recipes;
+  cache.bundles = bundles;
   cache.dayTargets = dayTargets;
   cache.overrides = overrides;
 }
@@ -118,9 +120,10 @@ async function refreshCache() {
 
 function foodsById() { return new Map(cache.foods.map(f => [f.id, f])); }
 function recipesById() { return new Map(cache.recipes.map(r => [r.id, r])); }
+function bundlesById() { return new Map(cache.bundles.map(b => [b.id, b])); }
 
 // ---- Routing ----
-const SCREENS = ['today', 'log', 'foods', 'recipes', 'workouts', 'history', 'weight', 'settings'];
+const SCREENS = ['today', 'log', 'foods', 'workouts', 'history', 'weight', 'settings'];
 
 function currentScreenFromHash() {
   const h = location.hash.replace('#', '');
@@ -154,7 +157,7 @@ function renderRoute() {
     btn.querySelector('.indicator').textContent = active ? '━' : '';
   });
   const renderers = {
-    today: renderToday, log: renderLog, foods: renderFoods, recipes: renderRecipes,
+    today: renderToday, log: renderLog, foods: renderLibrary,
     workouts: renderWorkouts, history: renderHistory, weight: renderWeight, settings: renderSettings,
   };
   renderers[screen]();
@@ -283,6 +286,27 @@ function favouriteItems(limit = 6) {
     .slice(0, limit);
 }
 
+// Logging a bundle fans out into one ordinary logEntry per item rather than a new kind of
+// entry — same date/meal/timestamp, so it reads in Today exactly like logging each item by
+// hand, and stays individually editable afterwards.
+function bundleToLogEntries(bundle, meal, date = todayISO()) {
+  const loggedAt = new Date().toISOString();
+  return bundle.items.map(item => ({
+    id: crypto.randomUUID(),
+    date,
+    foodId: item.kind === 'food' ? item.id : null,
+    recipeId: item.kind === 'recipe' ? item.id : null,
+    grams: item.grams,
+    meal,
+    loggedAt,
+  }));
+}
+
+async function logBundle(bundle, meal) {
+  await db.putAll('logEntries', bundleToLogEntries(bundle, meal));
+  await refreshCache();
+}
+
 function sheetPicked() {
   if (!sheetState.pickedId) return null;
   return sheetState.pickedKind === 'recipe'
@@ -308,6 +332,8 @@ function openLogSheet(meal) {
       <button type="button" class="meal-chip" id="sheet-meal-chip">${escapeHtml(MEAL_LABELS[meal])}</button>
     </div>
     <input class="text-input" id="sheet-search" type="text" placeholder="Search foods and recipes" autocomplete="off" style="margin-bottom:6px;">
+    <div class="section-label" id="sheet-bundles-label" style="margin:12px 0 0;" hidden>Bundles — tap to log all at once</div>
+    <div class="search-results" id="sheet-bundles" hidden></div>
     <div class="section-label" id="sheet-list-label" style="margin:12px 0 0;">Favourites</div>
     <div class="search-results" id="sheet-results"></div>
     <div id="sheet-amount" hidden>
@@ -335,6 +361,7 @@ function openLogSheet(meal) {
   document.getElementById('sheet-search').addEventListener('input', e => {
     sheetState.query = e.target.value;
     renderSheetResults();
+    renderSheetBundles();
   });
   document.getElementById('sheet-meal-chip').addEventListener('click', () => {
     sheetState.meal = MEALS[(MEALS.indexOf(sheetState.meal) + 1) % MEALS.length];
@@ -351,6 +378,39 @@ function openLogSheet(meal) {
   document.getElementById('sheet-add').addEventListener('click', confirmSheetLog);
 
   renderSheetResults();
+  renderSheetBundles();
+}
+
+// Bundles only surface unfiltered, above Favourites — they're already named and curated, so
+// they don't need to earn their place the way food favourites do, and searching them alongside
+// individual foods would blur "log one thing" with "log everything I usually have".
+function renderSheetBundles() {
+  const label = document.getElementById('sheet-bundles-label');
+  const container = document.getElementById('sheet-bundles');
+  const show = !sheetState.query.trim() && cache.bundles.length > 0;
+  label.hidden = !show;
+  container.hidden = !show;
+  if (!show) return;
+
+  container.innerHTML = '';
+  const fMap = foodsById(), rMap = recipesById();
+  for (const b of cache.bundles) {
+    const macros = bundleMacros(b, fMap, rMap);
+    const btn = el(`
+      <button type="button" class="search-result-btn">
+        <span class="name">${escapeHtml(b.name)}</span>
+        <span class="per100">${b.items.length} item${b.items.length === 1 ? '' : 's'} · ${macros.kcal} kcal · ${macros.protein} g</span>
+        <span class="check">➜</span>
+      </button>
+    `);
+    btn.addEventListener('click', async () => {
+      await logBundle(b, sheetState.meal);
+      closeModal();
+      renderToday();
+      toast(`Logged ${b.name}`);
+    });
+    container.appendChild(btn);
+  }
 }
 
 function adjustSheetGrams(delta) {
@@ -911,6 +971,35 @@ function renderFoodRows(list, rows, emptyMsg) {
   for (const f of rows) list.appendChild(renderFoodRow(f));
 }
 
+// ==================== LIBRARY (Foods / Recipes / Bundles) ====================
+let libraryMode = 'foods';
+
+function renderLibrary() {
+  document.querySelectorAll('#library-mode-chips .tag-chip').forEach(b => b.classList.toggle('active', b.dataset.mode === libraryMode));
+  document.getElementById('library-foods-panel').hidden = libraryMode !== 'foods';
+  document.getElementById('library-recipes-panel').hidden = libraryMode !== 'recipes';
+  document.getElementById('library-bundles-panel').hidden = libraryMode !== 'bundles';
+  document.getElementById('library-add-btn').textContent = libraryMode === 'foods' ? '+ Add food'
+    : libraryMode === 'recipes' ? '+ Build a recipe' : '+ New bundle';
+
+  if (libraryMode === 'foods') renderFoods();
+  else if (libraryMode === 'recipes') renderRecipes();
+  else renderBundles();
+}
+
+document.getElementById('library-mode-chips').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-mode]');
+  if (!btn) return;
+  libraryMode = btn.dataset.mode;
+  renderLibrary();
+});
+
+document.getElementById('library-add-btn').addEventListener('click', () => {
+  if (libraryMode === 'foods') openFoodModal(null);
+  else if (libraryMode === 'recipes') openRecipeModal(null);
+  else openBundleModal(null);
+});
+
 function renderFoods() {
   const filters = activeFoodFilters();
   const filterBtn = document.getElementById('foods-filter-btn');
@@ -950,8 +1039,6 @@ document.getElementById('foods-ingredients-toggle').addEventListener('click', ()
   foodsIngredientsExpanded = !foodsIngredientsExpanded;
   renderFoods();
 });
-
-document.getElementById('add-food-btn').addEventListener('click', () => openFoodModal(null));
 
 // One sheet for every way the list can be narrowed or reordered — keeps the page itself down to
 // a search box and a single button. Taps apply live (the list re-renders behind the sheet);
@@ -1323,8 +1410,6 @@ function renderRecipes() {
   });
 }
 
-document.getElementById('add-recipe-btn').addEventListener('click', () => openRecipeModal(null));
-
 async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {}) {
   const isEdit = !!recipe;
   const template = recipe ?? copyFrom;
@@ -1508,6 +1593,154 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
     closeModal();
     renderRecipes();
     if (isDraftRecipe(obj)) toast('Saved as draft — add the cooked weight when you weigh it');
+  });
+}
+
+// ==================== BUNDLES ====================
+// A bundle groups foods/recipes you always log together (a usual breakfast) so the whole group
+// can be added in one tap. See bundleToLogEntries/logBundle — logging one just writes several
+// ordinary logEntries, so nothing downstream needs to know bundles exist.
+function renderBundles() {
+  const list = document.getElementById('bundles-list');
+  list.innerHTML = '';
+  if (cache.bundles.length === 0) {
+    list.appendChild(el(`<div class="empty-state">No bundles yet. Group foods you always have together — like a usual breakfast — to log them all in one tap.</div>`));
+  }
+  const fMap = foodsById(), rMap = recipesById();
+  for (const b of cache.bundles) {
+    const macros = bundleMacros(b, fMap, rMap);
+    const itemsText = b.items.map(item => {
+      const m = bundleItemMacros(item, fMap, rMap);
+      return m ? `${m.name} ${item.grams}${m.unit}` : 'missing item';
+    }).join(', ');
+    const row = el(`
+      <div>
+        <div class="food-row" style="align-items:flex-start;">
+          <div class="main">
+            <div class="name">${escapeHtml(b.name)}</div>
+            <div class="per100">${escapeHtml(itemsText)}</div>
+            <div class="per100">${macros.kcal} kcal · ${macros.protein} g</div>
+          </div>
+          <div class="actions">
+            <button type="button" class="icon-btn-small" data-edit-bundle="${b.id}" aria-label="Edit ${escapeHtml(b.name)}">✎</button>
+            <button type="button" class="icon-btn-small" data-delete-bundle="${b.id}" aria-label="Delete ${escapeHtml(b.name)}">×</button>
+          </div>
+        </div>
+        <div style="margin:0 0 14px;">
+          <button type="button" class="secondary-btn" data-log-bundle="${b.id}" style="text-align:center;">Log now</button>
+        </div>
+      </div>
+    `);
+    list.appendChild(row);
+  }
+  list.querySelectorAll('[data-log-bundle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const b = bundlesById().get(btn.dataset.logBundle);
+      if (!b) return;
+      await logBundle(b, inferMeal());
+      toast(`Logged ${b.name}`);
+      goTo('today');
+    });
+  });
+  list.querySelectorAll('[data-edit-bundle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const b = bundlesById().get(btn.dataset.editBundle);
+      if (b) openBundleModal(b);
+    });
+  });
+  list.querySelectorAll('[data-delete-bundle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const b = bundlesById().get(btn.dataset.deleteBundle);
+      if (!b) return;
+      if (!confirm(`Delete "${b.name}"? This can't be undone.`)) return;
+      await db.remove('bundles', b.id);
+      await refreshCache();
+      renderBundles();
+    });
+  });
+}
+
+function openBundleModal(bundle) {
+  const isEdit = !!bundle;
+  let rows = isEdit ? bundle.items.map(i => ({ ...i })) : [{ kind: '', id: '', grams: '' }];
+
+  function itemOptions(selectedKind, selectedId) {
+    const foodOpts = cache.foods.map(f => `<option value="food:${f.id}" ${selectedKind === 'food' && selectedId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+    const recipeOpts = cache.recipes.filter(r => !isDraftRecipe(r)).map(r => `<option value="recipe:${r.id}" ${selectedKind === 'recipe' && selectedId === r.id ? 'selected' : ''}>${escapeHtml(r.name)} (recipe)</option>`).join('');
+    return `<option value="">Select food or recipe…</option>${foodOpts}${recipeOpts}`;
+  }
+
+  function rowHtml(row, i) {
+    const unit = row.kind === 'food' ? unitOf(foodsById().get(row.id)) : 'g';
+    return `
+      <div style="display:flex; gap:8px; margin-bottom:8px;" data-item-row="${i}">
+        <select class="text-input" data-item-select style="flex:2;">${itemOptions(row.kind, row.id)}</select>
+        <input class="text-input" data-item-grams type="number" placeholder="${unit}" aria-label="Amount of item ${i + 1}" style="flex:1;" value="${row.grams || ''}">
+        <button type="button" class="icon-btn-small" data-remove-item aria-label="Remove item">×</button>
+      </div>
+    `;
+  }
+
+  const body = `
+    <h2>${isEdit ? 'Edit bundle' : 'New bundle'}</h2>
+    <label class="field-label" for="bnd-name">Name</label>
+    <input class="text-input" id="bnd-name" style="margin-bottom:12px;" value="${isEdit ? escapeHtml(bundle.name) : ''}">
+    <div class="field-label" style="margin-bottom:8px;">Items</div>
+    <div id="bnd-items">${rows.map(rowHtml).join('')}</div>
+    <button type="button" class="secondary-btn" id="bnd-add-item" style="text-align:center; margin-bottom:14px;">Add item</button>
+    <div class="form-msg error" id="bnd-error" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="bnd-cancel">Cancel</button>
+      <button type="button" class="primary-btn" id="bnd-save">Save</button>
+    </div>
+  `;
+  openModal(body);
+
+  function rerenderItems() {
+    document.getElementById('bnd-items').innerHTML = rows.map(rowHtml).join('');
+    wireItemRows();
+  }
+
+  function wireItemRows() {
+    document.querySelectorAll('[data-item-select]').forEach((sel, i) => sel.addEventListener('change', () => {
+      const [kind, ...rest] = sel.value.split(':');
+      const id = rest.join(':');
+      rows[i].kind = kind || '';
+      rows[i].id = id;
+      if (kind === 'food') rows[i].grams = foodsById().get(id)?.defaultPortionG ?? 100;
+      else if (kind === 'recipe') rows[i].grams = onePortionGrams(recipesById().get(id));
+      rerenderItems();
+    }));
+    document.querySelectorAll('[data-item-grams]').forEach((inp, i) => inp.addEventListener('input', () => {
+      rows[i].grams = inp.value;
+    }));
+    document.querySelectorAll('[data-remove-item]').forEach((btn, i) => btn.addEventListener('click', () => {
+      rows.splice(i, 1);
+      if (rows.length === 0) rows.push({ kind: '', id: '', grams: '' });
+      rerenderItems();
+    }));
+  }
+  wireItemRows();
+
+  document.getElementById('bnd-add-item').addEventListener('click', () => {
+    rows.push({ kind: '', id: '', grams: '' });
+    rerenderItems();
+  });
+  document.getElementById('bnd-cancel').addEventListener('click', closeModal);
+
+  document.getElementById('bnd-save').addEventListener('click', async () => {
+    const obj = {
+      id: isEdit ? bundle.id : slugify(document.getElementById('bnd-name').value.trim() || 'bundle'),
+      name: document.getElementById('bnd-name').value.trim(),
+      items: rows.filter(r => r.kind && r.id && r.grams).map(r => ({ kind: r.kind, id: r.id, grams: Number(r.grams) })),
+    };
+    const errors = validateBundle(obj);
+    const errEl = document.getElementById('bnd-error');
+    if (errors.length) { errEl.textContent = errors.join(' '); errEl.hidden = false; return; }
+    await db.put('bundles', obj);
+    await refreshCache();
+    closeModal();
+    renderBundles();
   });
 }
 
@@ -1981,10 +2214,10 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('export-all-btn').addEventListener('click', async () => {
-  const [foods, recipes, logEntries, dayTargets, overrides, weightLog] = await Promise.all([
-    db.getAll('foods'), db.getAll('recipes'), db.getAll('logEntries'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'), db.getAll('weightLog'),
+  const [foods, recipes, bundles, logEntries, dayTargets, overrides, weightLog] = await Promise.all([
+    db.getAll('foods'), db.getAll('recipes'), db.getAll('bundles'), db.getAll('logEntries'), db.getAll('dayTargets'), db.getAll('dayTargetOverrides'), db.getAll('weightLog'),
   ]);
-  const text = JSON.stringify({ foods, recipes, logEntries, dayTargets, dayTargetOverrides: overrides, weightLog }, null, 2);
+  const text = JSON.stringify({ foods, recipes, bundles, logEntries, dayTargets, dayTargetOverrides: overrides, weightLog }, null, 2);
   const ok = await copyText(text);
   toast(ok ? 'Copied full data export' : 'Could not copy — check clipboard permission');
 });
