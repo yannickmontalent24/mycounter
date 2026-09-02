@@ -174,7 +174,7 @@ function showSectionLoading(container) {
   container.innerHTML = '<div class="section-loading"><span class="section-spinner" aria-hidden="true"></span><span>Loading…</span></div>';
 }
 
-async function renderToday() {
+async function renderToday({ scrollToMeal = null } = {}) {
   const dateStr = todayISO();
   document.getElementById('today-date-chip').textContent = formatDateHeader(dateStr);
   showSectionLoading(document.getElementById('today-entry-list'));
@@ -205,6 +205,13 @@ async function renderToday() {
   if (unsorted.length) {
     list.appendChild(buildMealSection(null, 'Not assigned', unsorted, { canAdd: false }));
   }
+
+  // Logging (or editing/deleting) something re-fetches and rebuilds this whole list, which
+  // would otherwise always land the scroll position back at Breakfast — annoying when you're
+  // three meals in. Callers that know which meal they just touched ask to be scrolled back to it.
+  if (scrollToMeal) {
+    document.getElementById(`meal-section-${scrollToMeal}`)?.scrollIntoView({ block: 'start' });
+  }
 }
 
 // One section per meal. Empty sections still render, because their "+" is the way to log
@@ -214,7 +221,7 @@ async function renderToday() {
 function buildMealSection(meal, label, entries, { canAdd, interactive = true } = {}) {
   const totals = sumMacros(entries);
   const section = el(`
-    <section class="meal-section">
+    <section class="meal-section" id="meal-section-${meal ?? 'unassigned'}">
       <div class="meal-header">
         <span class="meal-title">${escapeHtml(label)}</span>
         <span class="meal-subtotal">${entries.length ? `${totals.kcal} kcal · ${totals.protein} g` : ''}</span>
@@ -231,10 +238,15 @@ function buildMealSection(meal, label, entries, { canAdd, interactive = true } =
   for (const e of entries) {
     const row = el(`
       <div class="entry-row">
-        <div class="entry-main">
-          <div class="entry-name">${escapeHtml(e.name)}</div>
-          <div class="entry-detail">${e.grams} ${e.unit}</div>
-        </div>
+        ${interactive
+          ? `<button type="button" class="entry-main" data-edit-entry="${e.id}" aria-label="Edit ${escapeHtml(e.name)}">
+               <div class="entry-name">${escapeHtml(e.name)}</div>
+               <div class="entry-detail">${e.grams} ${e.unit}</div>
+             </button>`
+          : `<div class="entry-main">
+               <div class="entry-name">${escapeHtml(e.name)}</div>
+               <div class="entry-detail">${e.grams} ${e.unit}</div>
+             </div>`}
         <div class="entry-values">
           <div>${e.kcal} kcal</div>
           <div class="protein">${e.protein} g protein</div>
@@ -246,9 +258,10 @@ function buildMealSection(meal, label, entries, { canAdd, interactive = true } =
       </div>
     `);
     if (interactive) {
+      row.querySelector('[data-edit-entry]').addEventListener('click', () => openEditEntryModal(e.id));
       row.querySelector('.delete-btn').addEventListener('click', async () => {
         await db.remove('logEntries', e.id);
-        renderToday();
+        renderToday({ scrollToMeal: e.meal });
       });
       row.querySelector('[data-move-entry]').addEventListener('click', () => openMealPicker(e));
     }
@@ -406,7 +419,7 @@ function renderSheetBundles() {
     btn.addEventListener('click', async () => {
       await logBundle(b, sheetState.meal);
       closeModal();
-      renderToday();
+      renderToday({ scrollToMeal: sheetState.meal });
       toast(`Logged ${b.name}`);
     });
     container.appendChild(btn);
@@ -514,7 +527,7 @@ async function confirmSheetLog() {
   });
   await refreshCache();
   closeModal();
-  renderToday();
+  renderToday({ scrollToMeal: sheetState.meal });
 }
 
 function openMealPicker(entry) {
@@ -535,8 +548,83 @@ function openMealPicker(entry) {
       const stored = await db.get('logEntries', entry.id);
       if (stored) await db.put('logEntries', { ...stored, meal: btn.dataset.pickMeal });
       closeModal();
-      renderToday();
+      renderToday({ scrollToMeal: btn.dataset.pickMeal });
     });
+  });
+}
+
+// Tapping an entry's name/amount opens this to change how much was logged — the quick
+// delete (×) and move-meal (⇄) buttons on the row stay for the fast path, this is for
+// "actually I had more/less than that".
+async function openEditEntryModal(entryId) {
+  const entry = await db.get('logEntries', entryId);
+  if (!entry) return;
+  const isRecipe = entry.recipeId != null;
+  const record = isRecipe ? recipesById().get(entry.recipeId) : foodsById().get(entry.foodId);
+  if (!record) { toast('That item no longer exists in your library'); return; }
+  const unit = isRecipe ? 'g' : unitOf(record);
+
+  openModal(`
+    <h2>Edit entry</h2>
+    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">${escapeHtml(record.name)}</p>
+    <div class="section-label" style="margin-top:6px;">Amount (${unit})</div>
+    <div class="amount-row">
+      <button type="button" class="stepper-btn" id="ee-minus" aria-label="Decrease by 10">−</button>
+      <div class="amount-field">
+        <input id="ee-grams" type="text" inputmode="numeric" maxlength="4" aria-label="Amount" value="${entry.grams}">
+        <span class="unit">${unit}</span>
+      </div>
+      <button type="button" class="stepper-btn" id="ee-plus" aria-label="Increase by 10">+</button>
+    </div>
+    <div class="draft-summary">
+      <span class="name">${escapeHtml(record.name)}</span>
+      <span class="macros" id="ee-macros">—</span>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="ee-delete">Delete</button>
+      <button type="button" class="primary-btn" id="ee-save">Save</button>
+    </div>
+  `);
+
+  function currentGrams() {
+    return parseInt(document.getElementById('ee-grams').value, 10) || 0;
+  }
+  function updatePreview() {
+    const g = currentGrams();
+    const macrosEl = document.getElementById('ee-macros');
+    if (!g) { macrosEl.textContent = '—'; return; }
+    try {
+      const m = isRecipe ? recipePortionMacros(record, foodsById(), g) : foodPortionMacros(record, g);
+      macrosEl.textContent = `${m.kcal} kcal · ${m.protein} g`;
+    } catch {
+      macrosEl.textContent = 'missing ingredient';
+    }
+  }
+  updatePreview();
+
+  document.getElementById('ee-grams').addEventListener('input', e => {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+    updatePreview();
+  });
+  document.getElementById('ee-minus').addEventListener('click', () => {
+    document.getElementById('ee-grams').value = Math.max(1, currentGrams() - 10);
+    updatePreview();
+  });
+  document.getElementById('ee-plus').addEventListener('click', () => {
+    document.getElementById('ee-grams').value = currentGrams() + 10;
+    updatePreview();
+  });
+  document.getElementById('ee-delete').addEventListener('click', async () => {
+    await db.remove('logEntries', entry.id);
+    closeModal();
+    renderToday({ scrollToMeal: entry.meal });
+  });
+  document.getElementById('ee-save').addEventListener('click', async () => {
+    const grams = currentGrams();
+    if (!grams) return;
+    await db.put('logEntries', { ...entry, grams });
+    closeModal();
+    renderToday({ scrollToMeal: entry.meal });
   });
 }
 
@@ -1660,21 +1748,73 @@ function renderBundles() {
   });
 }
 
-function openBundleModal(bundle) {
-  const isEdit = !!bundle;
-  let rows = isEdit ? bundle.items.map(i => ({ ...i })) : [{ kind: '', id: '', grams: '' }];
+// A full-screen-ish search sheet for picking one food or recipe — the library can run into
+// the hundreds, so a plain <select> doesn't scale, and this reuses the same search-result
+// list the Today quick-log sheet already uses. Calls back with { kind, id } on a pick, or
+// null on Cancel.
+function openBundleItemPicker(onPicked) {
+  let query = '';
 
-  function itemOptions(selectedKind, selectedId) {
-    const foodOpts = cache.foods.map(f => `<option value="food:${f.id}" ${selectedKind === 'food' && selectedId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
-    const recipeOpts = cache.recipes.filter(r => !isDraftRecipe(r)).map(r => `<option value="recipe:${r.id}" ${selectedKind === 'recipe' && selectedId === r.id ? 'selected' : ''}>${escapeHtml(r.name)} (recipe)</option>`).join('');
-    return `<option value="">Select food or recipe…</option>${foodOpts}${recipeOpts}`;
+  function renderResults() {
+    const q = query.trim().toLowerCase();
+    const items = loggableItems()
+      .filter(c => !q || c.record.name.toLowerCase().includes(q))
+      .sort((a, b) => a.record.name.localeCompare(b.record.name))
+      .slice(0, 50);
+    const container = document.getElementById('bip-results');
+    container.innerHTML = '';
+    if (items.length === 0) {
+      container.appendChild(el(`<div class="meal-empty">No match.</div>`));
+      return;
+    }
+    for (const { kind, record } of items) {
+      const meta = kind === 'recipe' ? 'recipe' : `${record.per100g.kcal} kcal /100${unitOf(record)}`;
+      const btn = el(`
+        <button type="button" class="search-result-btn">
+          <span class="name">${escapeHtml(record.name)}</span>
+          <span class="per100">${escapeHtml(meta)}</span>
+        </button>
+      `);
+      // Picking bypasses closeModal (the next sheet opens straight over this one), so the
+      // pending "resume on close" below must be cleared here or it would misfire later.
+      btn.addEventListener('click', () => { pendingModalCancel = null; onPicked({ kind, id: record.id }); });
+      container.appendChild(btn);
+    }
+  }
+
+  openModal(`
+    <h2>Choose a food or recipe</h2>
+    <input class="text-input" id="bip-search" type="text" placeholder="Search foods and recipes" autocomplete="off" style="margin-bottom:6px;">
+    <div class="search-results" id="bip-results"></div>
+    <div class="modal-actions">
+      <button type="button" class="secondary-btn" id="bip-cancel">Cancel</button>
+    </div>
+  `);
+  // Cancelling this sheet by any route (the button, a backdrop tap, or dragging it shut)
+  // should resume the bundle builder rather than exit to the app underneath.
+  pendingModalCancel = () => onPicked(null);
+  document.getElementById('bip-search').addEventListener('input', e => { query = e.target.value; renderResults(); });
+  document.getElementById('bip-cancel').addEventListener('click', closeModal);
+  renderResults();
+}
+
+function openBundleModal(bundle, { restore = null } = {}) {
+  const isEdit = !!bundle;
+  let rows = restore ? restore.rows.map(r => ({ ...r }))
+    : (isEdit ? bundle.items.map(i => ({ ...i })) : [{ kind: '', id: '', grams: '' }]);
+  const initialName = restore ? restore.name : (isEdit ? bundle.name : '');
+
+  function itemLabel(row) {
+    const record = row.kind === 'food' ? foodsById().get(row.id) : (row.kind === 'recipe' ? recipesById().get(row.id) : null);
+    return record ? record.name : 'Select food or recipe…';
   }
 
   function rowHtml(row, i) {
-    const unit = row.kind === 'food' ? unitOf(foodsById().get(row.id)) : 'g';
+    const record = row.kind === 'food' ? foodsById().get(row.id) : (row.kind === 'recipe' ? recipesById().get(row.id) : null);
+    const unit = record ? (row.kind === 'recipe' ? 'g' : unitOf(record)) : 'g';
     return `
       <div style="display:flex; gap:8px; margin-bottom:8px;" data-item-row="${i}">
-        <select class="text-input" data-item-select style="flex:2;">${itemOptions(row.kind, row.id)}</select>
+        <button type="button" class="text-input item-picker-btn" data-item-picker="${i}" style="flex:2;">${escapeHtml(itemLabel(row))}</button>
         <input class="text-input" data-item-grams type="number" placeholder="${unit}" aria-label="Amount of item ${i + 1}" style="flex:1;" value="${row.grams || ''}">
         <button type="button" class="icon-btn-small" data-remove-item aria-label="Remove item">×</button>
       </div>
@@ -1684,7 +1824,7 @@ function openBundleModal(bundle) {
   const body = `
     <h2>${isEdit ? 'Edit bundle' : 'New bundle'}</h2>
     <label class="field-label" for="bnd-name">Name</label>
-    <input class="text-input" id="bnd-name" style="margin-bottom:12px;" value="${isEdit ? escapeHtml(bundle.name) : ''}">
+    <input class="text-input" id="bnd-name" style="margin-bottom:12px;" value="${escapeHtml(initialName)}">
     <div class="field-label" style="margin-bottom:8px;">Items</div>
     <div id="bnd-items">${rows.map(rowHtml).join('')}</div>
     <button type="button" class="secondary-btn" id="bnd-add-item" style="text-align:center; margin-bottom:14px;">Add item</button>
@@ -1701,15 +1841,22 @@ function openBundleModal(bundle) {
     wireItemRows();
   }
 
+  // Picking an item replaces the whole sheet with the full-screen picker, then rebuilds this
+  // one from a snapshot once it returns — same restore pattern the recipe builder uses for
+  // "New food", since only one sheet can be on screen at a time.
   function wireItemRows() {
-    document.querySelectorAll('[data-item-select]').forEach((sel, i) => sel.addEventListener('change', () => {
-      const [kind, ...rest] = sel.value.split(':');
-      const id = rest.join(':');
-      rows[i].kind = kind || '';
-      rows[i].id = id;
-      if (kind === 'food') rows[i].grams = foodsById().get(id)?.defaultPortionG ?? 100;
-      else if (kind === 'recipe') rows[i].grams = onePortionGrams(recipesById().get(id));
-      rerenderItems();
+    document.querySelectorAll('[data-item-picker]').forEach((btn, i) => btn.addEventListener('click', () => {
+      const snapshot = { name: document.getElementById('bnd-name').value, rows: rows.map(r => ({ ...r })) };
+      openBundleItemPicker(picked => {
+        if (picked) {
+          snapshot.rows[i].kind = picked.kind;
+          snapshot.rows[i].id = picked.id;
+          snapshot.rows[i].grams = picked.kind === 'food'
+            ? (foodsById().get(picked.id)?.defaultPortionG ?? 100)
+            : onePortionGrams(recipesById().get(picked.id));
+        }
+        openBundleModal(bundle, { restore: snapshot });
+      });
     }));
     document.querySelectorAll('[data-item-grams]').forEach((inp, i) => inp.addEventListener('input', () => {
       rows[i].grams = inp.value;
@@ -2249,22 +2396,37 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('scroll', syncModalViewport);
 }
 
+// Set by a sub-flow (e.g. the bundle item picker) that isn't a dead end — closing it, by
+// whatever means (Cancel, backdrop tap, drag-to-close), should resume the sheet it was opened
+// from rather than just exit. Cleared by closeModal() itself, and by anything that leaves the
+// sub-flow without going through closeModal() (picking a result opens the next sheet directly).
+let pendingModalCancel = null;
+
 function openModal(bodyHtml) {
   const backdrop = document.getElementById('modal-backdrop');
   const sheet = document.getElementById('modal-sheet');
-  sheet.innerHTML = bodyHtml;
+  document.getElementById('modal-sheet-body').innerHTML = bodyHtml;
   backdrop.hidden = false;
   // The page behind must stay put while a sheet is up. The scrolling element is .screen, not
   // body, so locking body alone would do nothing here.
   document.body.classList.add('modal-open');
-  sheet.scrollTop = 0;
+  document.getElementById('modal-sheet-body').scrollTop = 0;
+  // A previous sheet may have been left mid-drag (closeModal always resets this, but belt
+  // and braces so a fresh sheet never opens already offset).
+  sheet.style.transform = '';
   syncModalViewport();
 }
 function closeModal() {
+  const resume = pendingModalCancel;
+  pendingModalCancel = null;
   document.getElementById('modal-backdrop').hidden = true;
-  document.getElementById('modal-sheet').innerHTML = '';
+  document.getElementById('modal-sheet-body').innerHTML = '';
+  const sheet = document.getElementById('modal-sheet');
+  sheet.style.transform = '';
+  sheet.style.transition = '';
   clearModalViewport();
   document.body.classList.remove('modal-open');
+  if (resume) resume();
 }
 // When a field inside the sheet gets focus, wait for the keyboard/viewport to
 // settle, then bring it into view within the (now shorter) scrollable sheet.
@@ -2277,6 +2439,39 @@ document.getElementById('modal-sheet').addEventListener('focusin', e => {
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target.id === 'modal-backdrop') closeModal();
 });
+
+// Dragging the handle down closes the sheet — the handle sits outside the scrollable body
+// (see .modal-sheet-handle), so this never fights normal scrolling inside a long form.
+(function setupSheetDragToClose() {
+  const sheet = document.getElementById('modal-sheet');
+  const handle = document.getElementById('modal-sheet-handle');
+  const CLOSE_THRESHOLD = 90;
+  let dragging = false;
+  let startY = 0;
+  let deltaY = 0;
+
+  handle.addEventListener('pointerdown', e => {
+    dragging = true;
+    startY = e.clientY;
+    deltaY = 0;
+    sheet.style.transition = 'none';
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    deltaY = Math.max(0, e.clientY - startY);
+    sheet.style.transform = `translateY(${deltaY}px)`;
+  });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    sheet.style.transition = '';
+    if (deltaY > CLOSE_THRESHOLD) closeModal();
+    else sheet.style.transform = '';
+  }
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+})();
 
 // ==================== LOGIN GATE ====================
 let sessionUser = null;
