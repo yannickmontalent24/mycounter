@@ -98,37 +98,45 @@
     </div>
   </main>
 
-  <main id="screen-log" class="screen" data-screen="log" hidden>
-    <div class="screen-title-row">
-      <h1 class="screen-title">Log entry</h1>
-      <div class="chip-group">
-        <input type="date" class="date-chip-btn" id="log-date-input" aria-label="Change date">
-        <button type="button" class="meal-chip" id="log-meal-chip" aria-label="Change meal">Dinner</button>
+  <main id="screen-log" class="screen rd-screen" data-screen="log" hidden>
+    <div class="log-head">
+      <h1 class="rd-title">Log</h1>
+      <div class="log-chip-row">
+        <input type="date" class="rd-chip log-date-chip" id="log-date-input" aria-label="Change date">
+        <button type="button" class="rd-chip active" id="log-meal-chip" aria-label="Change meal">Dinner <span aria-hidden="true">▾</span></button>
       </div>
     </div>
 
-    <label class="field-label" for="foodsearch">Food</label>
-    <input id="foodsearch" class="text-input" type="text" placeholder="Search foods" autocomplete="off">
-
-    <div class="section-label" id="log-results-hint" style="margin-top:14px;" hidden>Most logged</div>
-    <div class="search-results" id="log-search-results"></div>
-
-    <div class="section-label" style="margin-top:26px;" id="amount-label">Amount (g)</div>
-    <div class="amount-row">
-      <button type="button" class="stepper-btn" id="grams-down" aria-label="Decrease by 10 grams">−</button>
-      <div class="amount-field">
-        <input id="gramsfield" type="text" inputmode="numeric" aria-label="Amount in grams" maxlength="4">
-        <span class="unit" id="amount-unit">g</span>
+    <div class="log-body">
+      <div class="rd-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg>
+        <input id="foodsearch" type="text" placeholder="Search foods and recipes" autocomplete="off" aria-label="Search foods and recipes">
       </div>
-      <button type="button" class="stepper-btn" id="grams-up" aria-label="Increase by 10 grams">+</button>
-    </div>
 
-    <div class="draft-summary">
-      <span class="name" id="log-draft-name">No food selected</span>
-      <span class="macros" id="log-draft-macros">—</span>
-    </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="eyebrow" id="log-results-hint" hidden>Most logged</div>
+        <div class="log-results" id="log-search-results"></div>
+      </div>
 
-    <button type="button" class="primary-btn" id="confirm-log-btn">Add to today</button>
+      <div class="log-amount">
+        <div class="eyebrow" id="amount-label">Amount</div>
+        <div class="log-amount-row">
+          <button type="button" class="log-step" id="grams-down" aria-label="Decrease by 10 grams">−</button>
+          <div class="log-amount-field">
+            <input id="gramsfield" type="text" inputmode="numeric" aria-label="Amount in grams" maxlength="4">
+            <span class="unit" id="amount-unit">g</span>
+          </div>
+          <button type="button" class="log-step" id="grams-up" aria-label="Increase by 10 grams">+</button>
+        </div>
+        <div class="log-preview" id="log-preview">
+          <div><div id="log-preview-kcal">—</div><div>kcal</div></div>
+          <div><div id="log-preview-protein">—</div><div>protein</div></div>
+          <div><div id="log-preview-left">—</div><div>kcal left</div></div>
+        </div>
+      </div>
+
+      <button type="button" class="rd-btn-primary" id="confirm-log-btn">Add to today</button>
+    </div>
   </main>
 
   <main id="screen-foods" class="screen" data-screen="foods" hidden>

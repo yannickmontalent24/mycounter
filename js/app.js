@@ -109,6 +109,10 @@ function toast(msg) {
 // ---- In-memory cache, refreshed from Firestore after any mutation ----
 const cache = { foods: [], recipes: [], bundles: [], dayTargets: [], overrides: [], weightLog: [], foodFrequency: new Map() };
 
+// Last computed Today totals + target, so the Log screen's "kcal left" preview doesn't need
+// its own fetch. Refreshed by renderToday.
+let lastToday = { kcal: 0, protein: 0, target: { kcal: null, protein: null } };
+
 // Split so boot can paint Today (which only needs the "essential" half) as soon as possible,
 // then fill in weightLog/foodFrequency — needed only by Settings and the quick-log
 // favourites — in the background rather than making the first screen wait on them too.
@@ -229,6 +233,7 @@ async function renderToday({ scrollToMeal = null } = {}) {
 
   applyHero('kcal', kcalTotal, target.kcal);
   applyHero('protein', protTotal, target.protein);
+  lastToday = { kcal: kcalTotal, protein: protTotal, target };
 
   document.getElementById('today-day-kcal').innerHTML = `${fmt(kcalTotal)} <span>kcal</span>`;
   document.getElementById('today-day-protein').innerHTML = `${fmt(protTotal)} <span>g</span>`;
@@ -797,11 +802,10 @@ function renderLog() {
   document.getElementById('gramsfield').setAttribute('aria-label', `Amount in ${unit === 'ml' ? 'millilitres' : 'grams'}`);
   document.getElementById('grams-down').setAttribute('aria-label', `Decrease by 10 ${unit === 'ml' ? 'millilitres' : 'grams'}`);
   document.getElementById('grams-up').setAttribute('aria-label', `Increase by 10 ${unit === 'ml' ? 'millilitres' : 'grams'}`);
-  document.getElementById('amount-label').textContent = unit === 'ml' ? 'Amount (ml)' : 'Amount (g)';
 
   const effectiveMeal = logState.meal ?? inferMeal();
   const chip = document.getElementById('log-meal-chip');
-  chip.textContent = MEAL_LABELS[effectiveMeal];
+  chip.innerHTML = `${escapeHtml(MEAL_LABELS[effectiveMeal])} <span aria-hidden="true">▾</span>`;
   chip.setAttribute('aria-label', `Meal: ${MEAL_LABELS[effectiveMeal]}. Tap to change.`);
 
   // Backdating a missed day: defaults to today, capped so it can never be set to the future.
@@ -861,16 +865,21 @@ function renderLogResults() {
     let per100Text;
     if (kind === 'recipe') {
       const per100 = recipePer100(record);
-      per100Text = per100 ? `${per100.kcal} kcal · ${per100.protein} g /100g` : 'unavailable';
+      per100Text = per100 ? `${per100.kcal} kcal · ${per100.protein} g P / 100 g` : 'unavailable';
     } else {
-      per100Text = `${record.per100g.kcal} kcal · ${record.per100g.protein} g /100${unitOf(record)}`;
+      per100Text = `${record.per100g.kcal} kcal · ${record.per100g.protein} g P / 100 ${unitOf(record)}`;
     }
     const selected = logState.pickedId === record.id && logState.pickedKind === kind;
+    const badge = kind === 'recipe'
+      ? '<span class="badge badge-recipe">▤ recipe</span>'
+      : sourceBadge(record.source);
     const btn = el(`
-      <button type="button" class="search-result-btn">
-        <span class="name">${escapeHtml(record.name)}${kind === 'recipe' ? ' <span class="recipe-tag">recipe</span>' : ''}</span>
-        <span class="per100">${per100Text}</span>
-        <span class="check">${selected ? '●' : '○'}</span>
+      <button type="button" class="log-result${selected ? ' is-selected' : ''}" aria-pressed="${selected}">
+        <span class="log-result-main">
+          <span class="log-result-name">${escapeHtml(record.name)}</span>
+          <span class="log-result-meta"><span class="log-result-per">${per100Text}</span>${badge}</span>
+        </span>
+        ${selected ? '<svg class="log-result-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>' : ''}
       </button>
     `);
     btn.addEventListener('click', () => {
@@ -883,12 +892,13 @@ function renderLogResults() {
   }
 
   // Nothing matched: offer to create it right here, rather than sending the user off to the
-  // Foods tab and back mid-log. This is the moment most likely to end a logging habit.
+  // Library tab and back mid-log. This is the moment most likely to end a logging habit.
   if (q && results.length === 0) {
     const raw = logState.query.trim();
     const addBtn = el(`
-      <button type="button" class="search-result-btn quick-add-row">
-        <span class="name">+ Add “${escapeHtml(raw)}” as a new food</span>
+      <button type="button" class="log-result log-result-add">
+        <span class="plus" aria-hidden="true">+</span>
+        <span class="txt">Add &ldquo;${escapeHtml(raw)}&rdquo; as a new food</span>
       </button>
     `);
     addBtn.addEventListener('click', () => openQuickAddFoodModal(raw));
@@ -993,29 +1003,37 @@ function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
 
 function renderLogDraft() {
   const picked = pickedRecord();
-  const nameEl = document.getElementById('log-draft-name');
-  const macrosEl = document.getElementById('log-draft-macros');
-  if (!picked) {
-    nameEl.textContent = 'Nothing selected';
-    macrosEl.textContent = '—';
-    return;
-  }
+  const kcalEl = document.getElementById('log-preview-kcal');
+  const protEl = document.getElementById('log-preview-protein');
+  const leftEl = document.getElementById('log-preview-left');
   const grams = parseInt(logState.grams, 10) || 0;
-  if (logState.pickedKind === 'recipe') {
-    const portion = onePortionGrams(picked);
-    // Name the batch's own share so an odd weight is obviously deliberate, not a mistake.
-    nameEl.textContent = `${picked.name} (1 portion = ${portion} g)`;
+
+  let m = null;
+  if (picked && grams) {
     try {
-      const m = recipePortionMacros(picked, foodsById(), grams);
-      macrosEl.textContent = `${m.kcal} kcal · ${m.protein} g`;
-    } catch {
-      macrosEl.textContent = 'missing ingredient';
-    }
+      m = logState.pickedKind === 'recipe'
+        ? recipePortionMacros(picked, foodsById(), grams)
+        : foodPortionMacros(picked, grams);
+    } catch { m = null; }
+  }
+
+  if (!m) {
+    kcalEl.textContent = '—';
+    protEl.textContent = '—';
+    leftEl.textContent = '—';
     return;
   }
-  nameEl.textContent = picked.name;
-  const m = foodPortionMacros(picked, grams);
-  macrosEl.textContent = `${m.kcal} kcal · ${m.protein} g`;
+
+  kcalEl.textContent = m.kcal;
+  protEl.textContent = `${m.protein} g`;
+
+  // "kcal left" = today's calorie target minus what's already logged today minus this draft.
+  // Only meaningful when a target exists and we're logging for today, not backdating.
+  const backdating = (logState.date ?? todayISO()) !== todayISO();
+  const targetKcal = lastToday.target && lastToday.target.kcal;
+  leftEl.textContent = (targetKcal && !backdating)
+    ? fmt(targetKcal - lastToday.kcal - m.kcal)
+    : '—';
 }
 
 document.getElementById('foodsearch').addEventListener('input', e => {
