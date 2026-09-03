@@ -2130,3 +2130,173 @@ input.log-date-chip::-webkit-calendar-picker-indicator { opacity: 0.5; }
 .weight-entry + .weight-entry { border-top: 1px solid var(--line-soft); }
 .weight-entry .d { font-size: 14px; font-weight: 600; }
 .weight-entry .k { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; }
+
+/* ---- Settings ------------------------------------------------------ */
+.settings-body { display: flex; flex-direction: column; gap: 16px; padding-bottom: 8px; }
+.settings-group { display: flex; flex-direction: column; gap: 8px; }
+.settings-card {
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.targets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  background: var(--text-primary);
+  color: var(--on-dark);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.targets-cols { display: flex; gap: 18px; }
+.targets-cols span:first-child { width: 62px; text-align: right; }
+.targets-cols span:last-child { width: 48px; text-align: right; }
+.weekday-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; }
+.weekday-row + .weekday-row { border-top: 1px solid var(--line-soft); }
+.weekday-row .day { font-size: 14px; font-weight: 600; }
+.weekday-row .inputs { display: flex; gap: 18px; }
+.weekday-row input {
+  height: 38px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--well);
+  box-shadow: var(--well-inset);
+  text-align: right;
+  padding: 0 10px;
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.weekday-row input:first-child { width: 62px; }
+.weekday-row input:last-child { width: 48px; }
+.weekday-row input:focus {
+  outline: none;
+  background: var(--well-strong);
+  box-shadow: var(--well-inset-strong), inset 0 0 0 1.5px var(--well-border);
+}
+
+.override-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; }
+.override-row + .override-row { border-top: 1px solid var(--line-soft); }
+.override-row .o-date { font-size: 14px; font-weight: 600; }
+.override-row .o-vals { display: flex; gap: 8px; align-items: center; flex: none; }
+.override-row .o-vals input {
+  height: 34px;
+  width: 66px;
+  border: none;
+  border-radius: 8px;
+  background: var(--well);
+  box-shadow: var(--well-inset);
+  text-align: right;
+  padding: 0 8px;
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.override-row .o-del { border: none; background: none; color: var(--accent); font-size: 16px; width: 32px; height: 32px; flex: none; }
+
+#overrides-list:not(:empty) + .settings-add-row { border-top: 1px solid var(--line-soft); }
+.settings-add-row,
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 15px;
+  font-weight: 600;
+}
+.settings-row + .settings-row,
+.settings-account { border-top: 1px solid var(--line-soft); }
+.settings-add-row { color: var(--text-secondary); }
+.settings-add-row .plus {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+}
+.settings-row .chev { color: var(--text-tertiary); font-family: var(--font-figure); }
+.settings-row-r { display: flex; align-items: center; gap: 8px; }
+.settings-row-val { font-family: var(--font-figure); font-size: 13px; color: var(--text-secondary); font-weight: 400; }
+.settings-account { align-items: center; }
+.settings-account-l { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; }
+.settings-account-l > span:first-child { font-size: 15px; font-weight: 600; }
+
+/* ---- History ------------------------------------------------------ */
+.history-tools { display: flex; gap: 8px; margin-bottom: 12px; }
+.history-jump {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--radius-control);
+  background: var(--well);
+  box-shadow: var(--well-inset);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.history-jump input {
+  border: none;
+  background: none;
+  font-family: var(--font-figure);
+  font-size: 13px;
+  color: var(--text-secondary);
+  width: 118px;
+}
+.history-tools .rd-btn-secondary { width: auto; flex: none; height: 44px; padding: 0 14px; font-size: 13px; }
+
+.history-list { display: flex; flex-direction: column; gap: 10px; }
+.history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  font: inherit;
+  color: var(--text-primary);
+}
+.history-card.is-over { border-color: var(--accent); }
+.history-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.history-card-top .date { font-size: 15px; font-weight: 700; }
+.history-card-top .status { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.history-card-top .status.is-over { color: var(--accent); font-weight: 700; }
+.history-card-figs {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+.history-card-figs .figs { display: flex; gap: 18px; font-family: var(--font-figure); font-variant-numeric: tabular-nums; }
+.history-card-figs .figs .v { display: block; font-size: 19px; font-weight: 700; }
+.history-card-figs .figs .u { display: block; font-size: 11px; color: var(--text-secondary); letter-spacing: 0.1em; text-transform: uppercase; }
+.history-card-figs .diff { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; color: var(--text-secondary); }
+.history-card-figs .diff.is-over { color: var(--accent); }

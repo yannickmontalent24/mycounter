@@ -1168,11 +1168,7 @@ function renderLibrary() {
   document.getElementById('library-recipes-panel').hidden = libraryMode !== 'recipes';
   document.getElementById('library-bundles-panel').hidden = libraryMode !== 'bundles';
   document.getElementById('library-foods-claude').hidden = libraryMode !== 'foods';
-
-  const online = navigator.onLine;
-  const badge = document.getElementById('library-sync-badge');
-  badge.className = `badge ${online ? 'badge-synced' : 'badge-offline'}`;
-  badge.textContent = online ? '⟳ synced' : '⊘ offline';
+  renderSyncStatus();
 
   if (libraryMode === 'foods') renderFoods();
   else if (libraryMode === 'recipes') renderRecipes();
@@ -2138,22 +2134,31 @@ async function renderHistoryList() {
     const kOver = target.kcal != null && kcalTotal > target.kcal;
     const pOver = target.protein != null && protTotal > target.protein;
     const over = kOver || pOver;
-    const bg = over ? 'var(--red-tint-bg)' : 'var(--navy-tint-bg)';
-    const border = over ? 'var(--red-tint-border)' : 'var(--navy-tint-border-2)';
-    const color = over ? 'var(--red)' : 'var(--navy)';
-    const diffColor = over ? 'var(--red-diff)' : 'var(--text-secondary)';
-    const diffParts = [];
-    if (target.kcal != null) diffParts.push(`${Math.abs(kcalTotal - target.kcal)} kcal ${kcalTotal > target.kcal ? 'over' : 'under'}`);
-    if (target.protein != null) diffParts.push(`${Math.abs(protTotal - target.protein)} g ${protTotal > target.protein ? 'over' : 'under'}`);
+    const hasTarget = target.kcal != null || target.protein != null;
+
+    let statusLabel = 'no target set';
+    let diff = '';
+    if (hasTarget) {
+      statusLabel = over ? '▲ over target' : 'under target';
+      if (target.kcal != null) {
+        const d = kcalTotal - target.kcal;
+        diff = `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)}`;
+      }
+    }
+
     const card = el(`
-      <button type="button" class="history-card" style="border:1px solid ${border}; background:${bg}; text-align:left; width:100%; cursor:pointer;">
-        <div class="top-row">
-          <div class="date">${formatDateHeader(dateStr)}</div>
-          <div class="totals-wrap" style="color:${color};">
-            <span>${over ? '▲' : '▼'}</span><span>${kcalTotal} kcal · ${protTotal} g</span>
-          </div>
+      <button type="button" class="history-card${over ? ' is-over' : ''}">
+        <div class="history-card-top">
+          <span class="date">${formatDateHeader(dateStr)}</span>
+          <span class="status${over ? ' is-over' : ''}">${statusLabel}</span>
         </div>
-        <div class="diff" style="color:${diffColor};">${diffParts.length ? diffParts.join(' · ') : 'no target set'}</div>
+        <div class="history-card-figs">
+          <span class="figs">
+            <span><span class="v">${fmt(kcalTotal)}</span><span class="u">kcal</span></span>
+            <span><span class="v">${protTotal} g</span><span class="u">protein</span></span>
+          </span>
+          ${diff ? `<span class="diff${over ? ' is-over' : ''}">${diff}</span>` : ''}
+        </div>
       </button>
     `);
     card.addEventListener('click', () => openDayDetailModal(dateStr));
@@ -2240,7 +2245,7 @@ document.getElementById('export-range-btn').addEventListener('click', () => {
 
 // ==================== SETTINGS ====================
 function renderSettings() {
-  document.getElementById('account-current-user').textContent = accountLabel(sessionUser);
+  document.getElementById('account-current-user').textContent = `Signed in as ${accountLabel(sessionUser)}`;
   renderSyncStatus();
   const list = document.getElementById('weekday-targets-list');
   list.innerHTML = '';
@@ -2248,10 +2253,10 @@ function renderSettings() {
     const row = cache.dayTargets.find(d => d.weekday === wd) ?? { weekday: wd, kcal: null, protein: null };
     const rowEl = el(`
       <div class="weekday-row">
-        <span class="day">${WEEKDAY_LABELS[wd]}</span>
+        <span class="day">${WEEKDAY_LABELS[wd].slice(0, 3)}</span>
         <div class="inputs">
-          <input type="number" aria-label="${WEEKDAY_LABELS[wd]} calorie target" placeholder="kcal" value="${row.kcal ?? ''}">
-          <input type="number" aria-label="${WEEKDAY_LABELS[wd]} protein target" placeholder="protein g" value="${row.protein ?? ''}">
+          <input type="number" inputmode="numeric" aria-label="${WEEKDAY_LABELS[wd]} calorie target" placeholder="—" value="${row.kcal ?? ''}">
+          <input type="number" inputmode="numeric" aria-label="${WEEKDAY_LABELS[wd]} protein target" placeholder="—" value="${row.protein ?? ''}">
         </div>
       </div>
     `);
@@ -2280,10 +2285,14 @@ function renderOverrides() {
   for (const o of sorted) {
     const row = el(`
       <div class="override-row">
-        <input type="date" value="${o.date}" aria-label="Override date" disabled>
-        <input type="number" placeholder="kcal" value="${o.kcal ?? ''}" style="width:80px;" class="text-input" aria-label="Override calorie target">
-        <input type="number" placeholder="protein g" value="${o.protein ?? ''}" style="width:90px;" class="text-input" aria-label="Override protein target">
-        <button type="button" class="icon-btn-small" aria-label="Remove override for ${o.date}">×</button>
+        <div class="o-main">
+          <div class="o-date">${escapeHtml(formatDateHeader(o.date))}</div>
+        </div>
+        <div class="o-vals">
+          <input type="number" inputmode="numeric" placeholder="kcal" value="${o.kcal ?? ''}" aria-label="Override calorie target for ${o.date}">
+          <input type="number" inputmode="numeric" placeholder="g" value="${o.protein ?? ''}" aria-label="Override protein target for ${o.date}">
+          <button type="button" class="o-del" aria-label="Remove override for ${o.date}">×</button>
+        </div>
       </div>
     `);
     const [kcalInput, protInput] = row.querySelectorAll('input[type="number"]');
@@ -2342,7 +2351,7 @@ document.getElementById('add-override-btn').addEventListener('click', () => {
 
 function updateSettingsWeightAvg() {
   const avg = averageWeight(cache.weightLog);
-  document.getElementById('settings-weight-avg').textContent = avg == null ? '—' : `${avg.toFixed(1)} kg`;
+  document.getElementById('settings-weight-avg').textContent = avg == null ? 'no data' : `${avg.toFixed(1)} avg`;
 }
 
 // ==================== BODY WEIGHT ====================
@@ -2763,11 +2772,13 @@ async function maybeOfferMigration() {
 
 // ==================== CONNECTION STATUS ====================
 function renderSyncStatus() {
-  const badge = document.getElementById('sync-badge');
-  if (!badge) return;
   const online = navigator.onLine;
-  badge.textContent = online ? 'synced' : 'offline — will sync';
-  badge.classList.toggle('offline', !online);
+  for (const id of ['sync-badge', 'library-sync-badge']) {
+    const badge = document.getElementById(id);
+    if (!badge) continue;
+    badge.className = `badge ${online ? 'badge-synced' : 'badge-offline'}`;
+    badge.textContent = online ? '⟳ synced' : '⊘ offline';
+  }
 }
 window.addEventListener('online', renderSyncStatus);
 window.addEventListener('offline', renderSyncStatus);

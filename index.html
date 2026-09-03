@@ -206,17 +206,19 @@
     <div class="workout-list" id="workout-exercises"></div>
   </main>
 
-  <main id="screen-history" class="screen" data-screen="history" hidden>
-    <button type="button" class="link-btn" id="history-back" style="margin-bottom:10px;">← Back to settings</button>
-    <div class="screen-title-row">
-      <h1 class="screen-title">History</h1>
-      <div class="readonly-badge">read only</div>
+  <main id="screen-history" class="screen rd-screen" data-screen="history" hidden>
+    <div class="subscreen-head">
+      <button type="button" class="rd-icon-btn" id="history-back" aria-label="Back to settings">‹</button>
+      <h1 class="rd-title">History</h1>
+      <span class="badge badge-readonly">🔒 read only</span>
     </div>
-    <div class="chip-group" style="margin-bottom:14px;">
-      <span class="section-label" style="text-transform:none; letter-spacing:0;">View a date</span>
-      <input type="date" class="date-chip-btn" id="history-jump-date" aria-label="View a specific date">
+    <div class="history-tools">
+      <label class="history-jump">
+        <span>Jump to a date</span>
+        <input type="date" id="history-jump-date" aria-label="View a specific date">
+      </label>
+      <button type="button" class="rd-btn-secondary" id="export-range-btn">Copy range</button>
     </div>
-    <button type="button" class="secondary-btn" id="export-range-btn" style="margin-bottom:14px;">Copy a date range for Claude</button>
     <div class="history-list" id="history-list"></div>
   </main>
 
@@ -240,48 +242,47 @@
     </div>
   </main>
 
-  <main id="screen-settings" class="screen" data-screen="settings" hidden>
-    <h1 class="screen-title" style="margin-bottom:20px;">Settings</h1>
+  <main id="screen-settings" class="screen rd-screen" data-screen="settings" hidden>
+    <div class="today-head"><h1 class="rd-title">Settings</h1></div>
 
-    <div class="settings-section">
-      <div class="section-label" style="margin-bottom:10px;">Daily targets</div>
-      <div class="settings-list" id="weekday-targets-list"></div>
-    </div>
+    <div class="settings-body">
+      <section class="settings-group">
+        <div class="eyebrow">Daily targets</div>
+        <div class="settings-card">
+          <div class="targets-head">
+            <span>Weekday</span>
+            <span class="targets-cols"><span>kcal</span><span>protein</span></span>
+          </div>
+          <div id="weekday-targets-list"></div>
+        </div>
+      </section>
 
-    <div class="settings-section">
-      <div class="section-label" style="margin-bottom:10px;">Date-specific overrides</div>
-      <div id="overrides-list"></div>
-      <button type="button" class="secondary-btn" id="add-override-btn" style="margin-top:10px;">Add a date override</button>
-    </div>
+      <section class="settings-group">
+        <div class="eyebrow">Date overrides</div>
+        <div class="settings-card">
+          <div id="overrides-list"></div>
+          <button type="button" class="settings-add-row" id="add-override-btn"><span class="plus" aria-hidden="true">+</span>Add an override</button>
+        </div>
+      </section>
 
-    <div class="settings-section">
-      <div class="section-label" style="margin-bottom:10px;">Body weight</div>
-      <div class="weight-row" style="margin-bottom:10px;">
-        <span>Average</span>
-        <span id="settings-weight-avg">—</span>
-      </div>
-      <button type="button" class="secondary-btn" id="open-weight-btn">Open body weight log</button>
-    </div>
-
-    <div class="settings-section">
-      <div class="section-label" style="margin-bottom:10px;">Data</div>
-      <div class="data-actions">
-        <button type="button" class="secondary-btn" id="open-history-btn">View history</button>
-        <button type="button" class="secondary-btn" id="export-all-btn">Export all data (JSON)</button>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <div class="section-label" style="margin-bottom:10px;">Account</div>
-      <div class="weight-row" style="margin-bottom:10px;">
-        <span>Signed in as</span>
-        <span id="account-current-user"></span>
-      </div>
-      <div class="weight-row" style="margin-bottom:10px;">
-        <span>Connection</span>
-        <span class="sync-badge" id="sync-badge">synced</span>
-      </div>
-      <button type="button" class="secondary-btn" id="logout-btn">Log out</button>
+      <section class="settings-group">
+        <div class="eyebrow">Data &amp; account</div>
+        <div class="settings-card">
+          <button type="button" class="settings-row" id="open-weight-btn">
+            <span>Body weight</span>
+            <span class="settings-row-r"><span class="settings-row-val" id="settings-weight-avg">—</span><span class="chev" aria-hidden="true">›</span></span>
+          </button>
+          <button type="button" class="settings-row" id="open-history-btn"><span>View history</span><span class="chev" aria-hidden="true">›</span></button>
+          <button type="button" class="settings-row" id="export-all-btn"><span>Export JSON</span><span class="chev" aria-hidden="true">›</span></button>
+          <div class="settings-row settings-account">
+            <span class="settings-account-l">
+              <span id="account-current-user">Signed in</span>
+              <span class="badge badge-synced" id="sync-badge">⟳ synced</span>
+            </span>
+            <button type="button" class="rd-link" id="logout-btn">Log out</button>
+          </div>
+        </div>
+      </section>
     </div>
   </main>
 
