@@ -995,6 +995,11 @@ let foodsSourceFilter = 'All';
 let foodsQuery = '';
 let foodsSort = 'name';
 let foodsIngredientsExpanded = false;
+let foodsListExpanded = false;
+
+// The library is browsed far less than it's searched — a long wall of every food on open buries
+// the search box and the paste/copy actions. Show a handful, with a button to see the rest.
+const FOODS_COLLAPSED_COUNT = 6;
 
 const FOOD_SORT_LABELS = {
   name: 'Name A–Z', frequency: 'Most logged', kcal: 'Calories, high–low', protein: 'Protein, high–low',
@@ -1115,7 +1120,17 @@ function renderFoods() {
   const sorted = sortFoods(filtered, foodsSort, id => frequencyOf('food', id));
   const { foods: mainRows, ingredients: ingredientRows } = splitFoodLibrary(sorted, cache.recipes, directlyLoggedFoodIds());
 
-  renderFoodRows(document.getElementById('foods-list'), mainRows, 'No foods yet. Add one, or paste from Claude.');
+  // A search or an active filter means the user is after something specific — show every match
+  // rather than hiding some behind the button. Otherwise cap the list until they ask for all.
+  const narrowed = q !== '' || filters.length > 0;
+  const canCollapse = !narrowed && mainRows.length > FOODS_COLLAPSED_COUNT;
+  const visibleRows = (canCollapse && !foodsListExpanded) ? mainRows.slice(0, FOODS_COLLAPSED_COUNT) : mainRows;
+
+  renderFoodRows(document.getElementById('foods-list'), visibleRows, 'No foods yet. Add one, or paste from Claude.');
+
+  const listToggle = document.getElementById('foods-list-toggle');
+  listToggle.hidden = !canCollapse;
+  listToggle.textContent = foodsListExpanded ? 'Show fewer ▴' : `Show all foods (${mainRows.length}) ▾`;
 
   const toggleBtn = document.getElementById('foods-ingredients-toggle');
   const ingList = document.getElementById('foods-ingredients-list');
@@ -1129,6 +1144,10 @@ document.getElementById('foods-search').addEventListener('input', e => { foodsQu
 document.getElementById('foods-filter-btn').addEventListener('click', openFoodsFilterSheet);
 document.getElementById('foods-ingredients-toggle').addEventListener('click', () => {
   foodsIngredientsExpanded = !foodsIngredientsExpanded;
+  renderFoods();
+});
+document.getElementById('foods-list-toggle').addEventListener('click', () => {
+  foodsListExpanded = !foodsListExpanded;
   renderFoods();
 });
 

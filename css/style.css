@@ -684,9 +684,9 @@ a { color: var(--navy); }
 .foods-claude-actions {
   display: flex;
   gap: 20px;
-  margin-top: 22px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline);
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
 }
 
 /* Foods list */

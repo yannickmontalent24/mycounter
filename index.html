@@ -141,6 +141,11 @@
     </div>
 
     <div id="library-foods-panel">
+      <div class="foods-claude-actions">
+        <button type="button" class="link-btn" id="paste-import-btn">Paste from Claude</button>
+        <button type="button" class="link-btn" id="copy-library-btn">Copy list for Claude</button>
+      </div>
+
       <div class="foods-toolbar">
         <input class="text-input" id="foods-search" type="text" placeholder="Search foods" autocomplete="off">
         <button type="button" class="pill-btn" id="foods-filter-btn" aria-haspopup="dialog">Filter &amp; sort</button>
@@ -149,14 +154,10 @@
       <div class="active-filters" id="foods-active-filters" hidden></div>
 
       <div class="entry-list" id="foods-list"></div>
+      <button type="button" class="link-btn" id="foods-list-toggle" style="margin-top:14px;" hidden></button>
 
       <button type="button" class="link-btn" id="foods-ingredients-toggle" style="margin-top:18px;">Recipe ingredients (0) ▾</button>
       <div class="entry-list" id="foods-ingredients-list" hidden></div>
-
-      <div class="foods-claude-actions">
-        <button type="button" class="link-btn" id="paste-import-btn">Paste from Claude</button>
-        <button type="button" class="link-btn" id="copy-library-btn">Copy list for Claude</button>
-      </div>
     </div>
 
     <div id="library-recipes-panel" hidden>
