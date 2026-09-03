@@ -600,26 +600,71 @@ async function confirmSheetLog() {
   refreshBackgroundCache().catch(() => {});
 }
 
-function openMealPicker(entry) {
-  const buttons = MEALS.map(m => `
-    <button type="button" class="secondary-btn" data-pick-meal="${m}" style="margin-bottom:8px; text-align:center;">${MEAL_LABELS[m]}</button>
-  `).join('');
+async function openMealPicker(entry) {
+  const stored = await db.get('logEntries', entry.id);
+  if (!stored) return;
+  const origMeal = stored.meal ?? null;
+  const origDate = stored.date;
+  const state = { meal: origMeal, date: origDate };
+
+  // Per-meal subtotals for that day, so each row shows what it already holds.
+  const dayEntries = await db.entriesInRange(origDate, origDate);
+  const resolved = resolveEntriesForDisplay(dayEntries, foodsById(), recipesById());
+  const subOf = meal => {
+    const s = resolved.filter(e => e.meal === meal).reduce((a, e) => ({ kcal: a.kcal + e.kcal, protein: a.protein + e.protein }), { kcal: 0, protein: 0 });
+    return `${s.kcal} kcal · ${s.protein} g`;
+  };
+
   openModal(`
-    <h2>Move to which meal?</h2>
-    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">${escapeHtml(entry.name)}</p>
-    ${buttons}
-    <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="meal-cancel" style="text-align:center;">Cancel</button>
+    <div class="sheet">
+      <div class="sheet-titleblock">
+        <div class="sheet-title-row">
+          <h2>Move to</h2>
+          <button type="button" class="sheet-cancel" id="mp-cancel">Cancel</button>
+        </div>
+        <div class="sub">${escapeHtml(entry.name)} · ${entry.grams} ${entry.unit}</div>
+      </div>
+
+      <div class="sheet-card" id="mp-list">
+        ${MEALS.map(m => `
+          <button type="button" class="sheet-select-row" data-meal="${m}">
+            <span style="flex:1; display:flex; flex-direction:column; gap:2px;">
+              <span style="font-size:15px;">${MEAL_LABELS[m]}</span>
+              <span class="u-figure" style="font-size:12px; color:var(--text-secondary);">${subOf(m)}</span>
+            </span>
+            ${m === origMeal ? '<span class="eyebrow" style="letter-spacing:0.08em;">now here</span>' : ''}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+          </button>`).join('')}
+      </div>
+
+      <div class="sheet-row">
+        <span>Day</span>
+        <input type="date" class="sheet-date-chip" id="mp-date" max="${todayISO()}" value="${origDate}" aria-label="Day">
+      </div>
+
+      <button type="button" class="sheet-primary" id="mp-save" disabled>Move entry</button>
     </div>
   `);
-  document.getElementById('meal-cancel').addEventListener('click', closeModal);
-  document.querySelectorAll('[data-pick-meal]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const stored = await db.get('logEntries', entry.id);
-      if (stored) await db.put('logEntries', { ...stored, meal: btn.dataset.pickMeal });
-      closeModal();
-      renderToday({ scrollToMeal: btn.dataset.pickMeal });
+
+  const rows = [...document.querySelectorAll('#mp-list .sheet-select-row')];
+  const saveBtn = document.getElementById('mp-save');
+  const paint = () => {
+    rows.forEach(r => {
+      const on = r.dataset.meal === state.meal;
+      r.classList.toggle('active', on);
+      r.querySelector('svg').hidden = !on;
     });
+    saveBtn.disabled = (state.meal === origMeal && state.date === origDate);
+  };
+  paint();
+
+  rows.forEach(r => r.addEventListener('click', () => { state.meal = r.dataset.meal; paint(); }));
+  document.getElementById('mp-date').addEventListener('change', e => { state.date = e.target.value || origDate; paint(); });
+  document.getElementById('mp-cancel').addEventListener('click', closeModal);
+  saveBtn.addEventListener('click', async () => {
+    await db.put('logEntries', { ...stored, meal: state.meal, date: state.date });
+    closeModal();
+    renderToday({ scrollToMeal: state.date === todayISO() ? state.meal : null });
   });
 }
 
@@ -917,105 +962,21 @@ function renderLogResults() {
         <span class="txt">Add &ldquo;${escapeHtml(raw)}&rdquo; as a new food</span>
       </button>
     `);
-    addBtn.addEventListener('click', () => openQuickAddFoodModal(raw));
+    addBtn.addEventListener('click', () => openFoodModal(null, {
+      prefillName: raw,
+      onSaved: obj => {
+        logState.query = '';
+        logState.pickedId = obj.id;
+        logState.pickedKind = 'food';
+        logState.grams = String(obj.defaultPortionG);
+        renderLog();
+        toast(`Added ${obj.name}`);
+      },
+    }));
     container.appendChild(addBtn);
   }
 }
 
-// Deliberately fewer fields than the full Add food form: name, the two numbers that matter,
-// portion, source. Everything else can be filled in later from the Foods tab.
-function openQuickAddFoodModal(prefillName, { onSaved = null } = {}) {
-  const body = `
-    <h2>Quick add food</h2>
-    <label class="field-label" for="q-name">Name</label>
-    <input class="text-input" id="q-name" style="margin-bottom:12px;" value="${escapeHtml(prefillName)}">
-    <label class="field-label" for="q-unit">Measured in</label>
-    <select class="text-input" id="q-unit" style="margin-bottom:12px;">
-      <option value="g">grams — solid food</option>
-      <option value="ml">millilitres — drinks</option>
-    </select>
-    <label class="field-label" for="q-kcal"><span data-unit-word>Calories per 100 g</span></label>
-    <input class="text-input" id="q-kcal" type="number" inputmode="numeric" style="margin-bottom:12px;">
-    <label class="field-label" for="q-protein"><span data-unit-word>Protein per 100 g</span></label>
-    <input class="text-input" id="q-protein" type="number" inputmode="decimal" style="margin-bottom:12px;">
-    <label class="field-label" for="q-portion"><span data-unit-word>Usual portion (g)</span></label>
-    <input class="text-input" id="q-portion" type="number" inputmode="numeric" style="margin-bottom:12px;" value="100">
-    <label class="field-label" for="q-source">Source</label>
-    <select class="text-input" id="q-source" style="margin-bottom:12px;">
-      <option value="label">label — from packaging</option>
-      <option value="reference">reference — published table</option>
-      <option value="estimate">estimate — entered by hand</option>
-    </select>
-    <label class="field-label" for="q-cook-category">Cooking category (optional)</label>
-    <select class="text-input" id="q-cook-category" style="margin-bottom:6px;">
-      <option value="">No estimate</option>
-      ${COOK_CATEGORIES.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('')}
-    </select>
-    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">
-      Used to suggest this recipe's cooked weight for you.
-    </div>
-    <div class="form-msg error" id="q-error" hidden></div>
-    <div class="form-msg" id="q-warn" hidden style="color:var(--amber);"></div>
-    <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="q-cancel">Cancel</button>
-      <button type="button" class="primary-btn" id="q-save">Save &amp; select</button>
-    </div>
-  `;
-  openModal(body);
-  document.getElementById('q-cancel').addEventListener('click', closeModal);
-
-  const qUnitSelect = document.getElementById('q-unit');
-  const applyQuickUnitLabels = () => {
-    const u = qUnitSelect.value;
-    const words = [`Calories per 100 ${u}`, `Protein per 100 ${u}`, `Usual portion (${u})`];
-    document.querySelectorAll('#modal-sheet [data-unit-word]').forEach((span, i) => { span.textContent = words[i]; });
-  };
-  qUnitSelect.addEventListener('change', applyQuickUnitLabels);
-
-  let duplicateAcknowledged = false;
-  document.getElementById('q-save').addEventListener('click', async () => {
-    const num = v => (v === '' ? null : Number(v));
-    const name = document.getElementById('q-name').value.trim();
-    const errEl = document.getElementById('q-error');
-    const warnEl = document.getElementById('q-warn');
-
-    const similar = findSimilarFoods(name, cache.foods);
-    if (similar.length && !duplicateAcknowledged) {
-      warnEl.innerHTML = `You already have <strong>${escapeHtml(similar[0].name)}</strong>. Tap Save again to add this anyway.`;
-      warnEl.hidden = false;
-      duplicateAcknowledged = true;
-      return;
-    }
-
-    const obj = {
-      id: slugify(name),
-      name,
-      per100g: {
-        kcal: num(document.getElementById('q-kcal').value),
-        protein: num(document.getElementById('q-protein').value),
-        carbs: null, fat: null, fibre: null,
-      },
-      defaultPortionG: num(document.getElementById('q-portion').value) ?? 100,
-      source: document.getElementById('q-source').value,
-      unit: qUnitSelect.value,
-      tags: [],
-      cookCategory: document.getElementById('q-cook-category').value || null,
-    };
-    const errors = validateFood(obj);
-    if (errors.length) { errEl.textContent = errors.join(' '); errEl.hidden = false; return; }
-
-    await db.put('foods', obj);
-    await refreshCache();
-    closeModal();
-    if (onSaved) { onSaved(obj); return; }
-    // Straight back into the log flow with the new food already selected.
-    logState.query = '';
-    logState.pickedId = obj.id;
-    logState.grams = String(obj.defaultPortionG);
-    renderLog();
-    toast(`Added ${obj.name}`);
-  });
-}
 
 function renderLogDraft() {
   const picked = pickedRecord();
@@ -1106,7 +1067,7 @@ document.getElementById('confirm-log-btn').addEventListener('click', async () =>
 
 // ==================== FOODS ====================
 let foodsTagFilter = 'All';
-let foodsSourceFilter = 'All';
+let foodsSources = new Set(); // empty = every source
 let foodsQuery = '';
 let foodsSort = 'name';
 let foodsIngredientsExpanded = false;
@@ -1117,15 +1078,19 @@ let foodsListExpanded = false;
 const FOODS_COLLAPSED_COUNT = 6;
 
 const FOOD_SORT_LABELS = {
-  name: 'Name A–Z', frequency: 'Most logged', kcal: 'Calories, high–low', protein: 'Protein, high–low',
+  name: 'Name A–Z', frequency: 'Most logged', kcal: 'Most calories', protein: 'Most protein',
 };
-const FOOD_SOURCES = ['All', 'label', 'reference', 'estimate'];
+
+function foodMatchesFilters(f) {
+  return (foodsTagFilter === 'All' || (f.tags ?? []).includes(foodsTagFilter))
+    && (foodsSources.size === 0 || foodsSources.has(f.source));
+}
 
 // Non-default filter/sort state — drives both the toolbar badge count and the summary chips.
 function activeFoodFilters() {
   const out = [];
   if (foodsSort !== 'name') out.push({ label: FOOD_SORT_LABELS[foodsSort], clear: () => { foodsSort = 'name'; } });
-  if (foodsSourceFilter !== 'All') out.push({ label: foodsSourceFilter, clear: () => { foodsSourceFilter = 'All'; } });
+  for (const s of foodsSources) out.push({ label: s, clear: () => { foodsSources.delete(s); } });
   if (foodsTagFilter !== 'All') out.push({ label: foodsTagFilter, clear: () => { foodsTagFilter = 'All'; } });
   return out;
 }
@@ -1221,9 +1186,7 @@ function renderFoods() {
   }
 
   const q = foodsQuery.trim().toLowerCase();
-  const filtered = cache.foods.filter(f => (foodsTagFilter === 'All' || (f.tags ?? []).includes(foodsTagFilter))
-    && (foodsSourceFilter === 'All' || f.source === foodsSourceFilter)
-    && (!q || f.name.toLowerCase().includes(q)));
+  const filtered = cache.foods.filter(f => foodMatchesFilters(f) && (!q || f.name.toLowerCase().includes(q)));
   const sorted = sortFoods(filtered, foodsSort, id => frequencyOf('food', id));
   const { foods: mainRows, ingredients: ingredientRows } = splitFoodLibrary(sorted, cache.recipes, directlyLoggedFoodIds());
 
@@ -1260,132 +1223,212 @@ document.getElementById('foods-list-toggle').addEventListener('click', () => {
   renderFoods();
 });
 
-// One sheet for every way the list can be narrowed or reordered — keeps the page itself down to
-// a search box and a single button. Taps apply live (the list re-renders behind the sheet);
-// Done just closes it.
+// Sort is single-select; source is multi-select. Nothing changes behind the sheet until the
+// primary is tapped — "Show N foods" previews the result count live.
 function openFoodsFilterSheet() {
-  const chipRow = (group, values, labelOf, current) => `
-    <div class="tag-chips filter-chips" data-group="${group}">
-      ${values.map(v => `<button type="button" class="tag-chip${v === current ? ' active' : ''}" data-value="${escapeHtml(v)}">${escapeHtml(labelOf(v))}</button>`).join('')}
-    </div>`;
+  const SORTS = ['frequency', 'name', 'kcal', 'protein'];
+  const SOURCES = ['label', 'reference', 'estimate'];
+  const draft = { sort: foodsSort, sources: new Set(foodsSources), tag: foodsTagFilter };
   const tags = allTagsFromFoods();
-  const body = `
-    <h2>Filter &amp; sort</h2>
-    <div class="section-label" style="margin-bottom:8px;">Sort by</div>
-    ${chipRow('sort', FOOD_SORTS, v => FOOD_SORT_LABELS[v], foodsSort)}
-    <div class="section-label" style="margin:16px 0 8px;">Source</div>
-    ${chipRow('source', FOOD_SOURCES, v => v, foodsSourceFilter)}
-    ${tags.length > 1 ? `<div class="section-label" style="margin:16px 0 8px;">Tag</div>${chipRow('tag', tags, v => v, foodsTagFilter)}` : ''}
-    <div class="modal-actions" style="margin-top:20px;">
-      <button type="button" class="secondary-btn" id="foods-filter-reset">Reset</button>
-      <button type="button" class="primary-btn" id="foods-filter-done">Done</button>
-    </div>
-  `;
-  openModal(body);
 
-  document.querySelectorAll('#modal-sheet .filter-chips').forEach(row => {
-    row.addEventListener('click', e => {
-      const btn = e.target.closest('button[data-value]');
-      if (!btn) return;
-      const value = btn.dataset.value;
-      if (row.dataset.group === 'sort') foodsSort = value;
-      else if (row.dataset.group === 'source') foodsSourceFilter = value;
-      else foodsTagFilter = value;
-      row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-      renderFoods();
+  openModal(`
+    <div class="sheet">
+      <div class="sheet-title-row">
+        <h2>Filter &amp; sort</h2>
+        <button type="button" class="sheet-cancel" id="ff-reset">Reset</button>
+      </div>
+
+      <div class="sheet-field">
+        <span class="eyebrow">Sort by</span>
+        <div class="sheet-card" id="ff-sort">
+          ${SORTS.map(s => `
+            <button type="button" class="sheet-select-row${s === draft.sort ? ' active' : ''}" data-sort="${s}">
+              <span>${FOOD_SORT_LABELS[s]}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"${s === draft.sort ? '' : ' hidden'}><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+            </button>`).join('')}
+        </div>
+      </div>
+
+      <div class="sheet-field">
+        <span class="eyebrow">Show only</span>
+        <div class="sheet-chips" id="ff-src">
+          ${SOURCES.map(s => `<button type="button" class="sheet-chip${s === 'estimate' ? ' est' : ''}${draft.sources.has(s) ? ' active' : ''}" data-src="${s}">${badgeIcon(s)} ${s}</button>`).join('')}
+        </div>
+      </div>
+
+      ${tags.length > 1 ? `
+        <div class="sheet-field">
+          <span class="eyebrow">Tag</span>
+          <div class="sheet-chips" id="ff-tag">
+            ${tags.map(t => `<button type="button" class="sheet-chip${t === draft.tag ? ' active' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}
+          </div>
+        </div>` : ''}
+
+      <button type="button" class="sheet-primary" id="ff-apply"></button>
+    </div>
+  `);
+
+  const previewCount = () => cache.foods.filter(f =>
+    (draft.tag === 'All' || (f.tags ?? []).includes(draft.tag))
+    && (draft.sources.size === 0 || draft.sources.has(f.source))).length;
+  const refreshApply = () => { document.getElementById('ff-apply').textContent = `Show ${previewCount()} foods`; };
+  refreshApply();
+
+  document.getElementById('ff-sort').addEventListener('click', e => {
+    const b = e.target.closest('[data-sort]'); if (!b) return;
+    draft.sort = b.dataset.sort;
+    document.querySelectorAll('#ff-sort .sheet-select-row').forEach(r => {
+      const on = r === b;
+      r.classList.toggle('active', on);
+      r.querySelector('svg').hidden = !on;
     });
   });
+  document.getElementById('ff-src').addEventListener('click', e => {
+    const b = e.target.closest('[data-src]'); if (!b) return;
+    const s = b.dataset.src;
+    draft.sources.has(s) ? draft.sources.delete(s) : draft.sources.add(s);
+    b.classList.toggle('active');
+    refreshApply();
+  });
+  const tagRow = document.getElementById('ff-tag');
+  if (tagRow) tagRow.addEventListener('click', e => {
+    const b = e.target.closest('[data-tag]'); if (!b) return;
+    draft.tag = b.dataset.tag;
+    tagRow.querySelectorAll('.sheet-chip').forEach(c => c.classList.toggle('active', c === b));
+    refreshApply();
+  });
 
-  document.getElementById('foods-filter-reset').addEventListener('click', () => {
-    foodsSort = 'name'; foodsSourceFilter = 'All'; foodsTagFilter = 'All';
-    document.querySelectorAll('#modal-sheet .filter-chips').forEach(row => {
-      row.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.value === (
-        row.dataset.group === 'sort' ? 'name' : 'All'
-      )));
+  document.getElementById('ff-reset').addEventListener('click', () => {
+    draft.sort = 'name'; draft.sources.clear(); draft.tag = 'All';
+    document.querySelectorAll('#ff-sort .sheet-select-row').forEach(r => {
+      const on = r.dataset.sort === 'name';
+      r.classList.toggle('active', on);
+      r.querySelector('svg').hidden = !on;
     });
+    document.querySelectorAll('#ff-src .sheet-chip, #ff-tag .sheet-chip').forEach(c => c.classList.remove('active'));
+    if (tagRow) tagRow.querySelector('[data-tag="All"]')?.classList.add('active');
+    refreshApply();
+  });
+
+  document.getElementById('ff-apply').addEventListener('click', () => {
+    foodsSort = draft.sort;
+    foodsSources = draft.sources;
+    foodsTagFilter = draft.tag;
+    closeModal();
     renderFoods();
   });
-  document.getElementById('foods-filter-done').addEventListener('click', closeModal);
 }
 
-function openFoodModal(food) {
+// One sheet for add / edit / quick-add (from the Log tab's "add as new food" row and the recipe
+// builder's "new food"). `onSaved` diverts the result instead of re-rendering the Foods list.
+function openFoodModal(food, { prefillName = '', onSaved = null } = {}) {
   const isEdit = !!food;
-  const body = `
-    <h2>${isEdit ? 'Edit food' : 'Add food'}</h2>
-    <label class="field-label" for="f-name">Name</label>
-    <input class="text-input" id="f-name" style="margin-bottom:12px;" value="${isEdit ? escapeHtml(food.name) : ''}">
-    <label class="field-label" for="f-unit">Measured in</label>
-    <select class="text-input" id="f-unit" style="margin-bottom:12px;">
-      <option value="g" ${!isEdit || unitOf(food) === 'g' ? 'selected' : ''}>grams — solid food</option>
-      <option value="ml" ${isEdit && unitOf(food) === 'ml' ? 'selected' : ''}>millilitres — drinks</option>
-    </select>
-    <label class="field-label" for="f-kcal"><span data-unit-word>Calories per 100 g</span></label>
-    <input class="text-input" id="f-kcal" type="number" style="margin-bottom:12px;" value="${isEdit ? food.per100g.kcal : ''}">
-    <label class="field-label" for="f-protein"><span data-unit-word>Protein per 100 g</span></label>
-    <input class="text-input" id="f-protein" type="number" style="margin-bottom:12px;" value="${isEdit ? food.per100g.protein : ''}">
-    <label class="field-label" for="f-carbs"><span data-unit-word>Carbs per 100 g (optional)</span></label>
-    <input class="text-input" id="f-carbs" type="number" style="margin-bottom:12px;" value="${isEdit && food.per100g.carbs != null ? food.per100g.carbs : ''}">
-    <label class="field-label" for="f-fat"><span data-unit-word>Fat per 100 g (optional)</span></label>
-    <input class="text-input" id="f-fat" type="number" style="margin-bottom:12px;" value="${isEdit && food.per100g.fat != null ? food.per100g.fat : ''}">
-    <label class="field-label" for="f-fibre"><span data-unit-word>Fibre per 100 g (optional)</span></label>
-    <input class="text-input" id="f-fibre" type="number" style="margin-bottom:12px;" value="${isEdit && food.per100g.fibre != null ? food.per100g.fibre : ''}">
-    <label class="field-label" for="f-portion"><span data-unit-word>Default portion (g)</span></label>
-    <input class="text-input" id="f-portion" type="number" style="margin-bottom:12px;" value="${isEdit ? food.defaultPortionG : 100}">
-    <label class="field-label" for="f-source">Source</label>
-    <select class="text-input" id="f-source" style="margin-bottom:12px;">
-      <option value="label" ${isEdit && food.source === 'label' ? 'selected' : ''}>label — from packaging</option>
-      <option value="reference" ${isEdit && food.source === 'reference' ? 'selected' : ''}>reference — published table</option>
-      <option value="estimate" ${isEdit && food.source === 'estimate' ? 'selected' : ''}>estimate — entered by hand</option>
-    </select>
-    <label class="field-label" for="f-tags">Tags (comma separated)</label>
-    <input class="text-input" id="f-tags" style="margin-bottom:12px;" value="${isEdit ? escapeHtml((food.tags ?? []).join(', ')) : ''}">
-    <label class="field-label" for="f-cook-category">Cooking category (optional)</label>
-    <select class="text-input" id="f-cook-category" style="margin-bottom:6px;">
-      <option value="">No estimate</option>
-      ${COOK_CATEGORIES.map(c => `<option value="${c.id}" ${isEdit && food.cookCategory === c.id ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
-    </select>
-    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;">
-      Used only to suggest a starting cooked weight when this food goes into a recipe.
-    </div>
-    <div class="form-msg error" id="f-error" hidden></div>
-    <div class="form-msg" id="f-warn" hidden style="color:var(--amber);"></div>
-    <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="f-cancel">Cancel</button>
-      <button type="button" class="primary-btn" id="f-save">Save</button>
-    </div>
-  `;
-  openModal(body);
-  document.getElementById('f-cancel').addEventListener('click', closeModal);
-
-  const fUnitSelect = document.getElementById('f-unit');
-  const applyFoodUnitLabels = () => {
-    const u = fUnitSelect.value;
-    const words = [
-      `Calories per 100 ${u}`, `Protein per 100 ${u}`, `Carbs per 100 ${u} (optional)`,
-      `Fat per 100 ${u} (optional)`, `Fibre per 100 ${u} (optional)`, `Default portion (${u})`,
-    ];
-    document.querySelectorAll('#modal-sheet [data-unit-word]').forEach((span, i) => { span.textContent = words[i]; });
+  const st = {
+    unit: isEdit ? unitOf(food) : 'g',
+    source: isEdit ? food.source : 'label',
   };
-  fUnitSelect.addEventListener('change', applyFoodUnitLabels);
-  applyFoodUnitLabels();
+  const v = x => (x == null ? '' : x);
 
-  let duplicateAcknowledged = false;
+  openModal(`
+    <div class="sheet">
+      <div class="sheet-title-row">
+        <h2>${isEdit ? 'Edit food' : 'Add a food'}</h2>
+        <button type="button" class="sheet-cancel" id="f-cancel">Cancel</button>
+      </div>
+
+      <div class="sheet-field">
+        <span class="eyebrow">Name</span>
+        <input class="sheet-well" id="f-name" autocomplete="off" value="${isEdit ? escapeHtml(food.name) : escapeHtml(prefillName)}">
+      </div>
+
+      <div class="sheet-field">
+        <span class="eyebrow">Per 100</span>
+        <div class="sheet-well-pair">
+          <label class="sheet-well-unit"><input id="f-kcal" type="text" inputmode="numeric" aria-label="Calories per 100" value="${isEdit ? v(food.per100g.kcal) : ''}"><span class="u">kcal</span></label>
+          <label class="sheet-well-unit"><input id="f-protein" type="text" inputmode="decimal" aria-label="Protein per 100" value="${isEdit ? v(food.per100g.protein) : ''}"><span class="u">g protein</span></label>
+        </div>
+      </div>
+
+      <div class="sheet-field">
+        <span class="eyebrow">Default portion</span>
+        <label class="sheet-well-unit" style="max-width:150px;"><input id="f-portion" type="text" inputmode="numeric" aria-label="Default portion" value="${isEdit ? v(food.defaultPortionG) : '100'}"><span class="u" id="f-portion-u">g</span></label>
+      </div>
+
+      <div class="sheet-chips" id="f-unit-chips">
+        <button type="button" class="sheet-chip${st.unit === 'g' ? ' active' : ''}" data-unit="g">grams</button>
+        <button type="button" class="sheet-chip${st.unit === 'ml' ? ' active' : ''}" data-unit="ml">millilitres</button>
+      </div>
+
+      <div class="sheet-field">
+        <span class="eyebrow">Where the numbers came from</span>
+        <div class="sheet-chips" id="f-source-chips">
+          <button type="button" class="sheet-chip${st.source === 'label' ? ' active' : ''}" data-source="label">${badgeIcon('label')} label</button>
+          <button type="button" class="sheet-chip${st.source === 'reference' ? ' active' : ''}" data-source="reference">${badgeIcon('reference')} reference</button>
+          <button type="button" class="sheet-chip est${st.source === 'estimate' ? ' active' : ''}" data-source="estimate">${badgeIcon('estimate')} estimate</button>
+        </div>
+        <div class="sheet-help">Read off the packet. Estimates are marked everywhere they appear.</div>
+      </div>
+
+      <button type="button" class="sheet-more" id="f-more-toggle">More — carbs, fat, fibre, tags, cooking</button>
+      <div class="sheet-more-body" id="f-more" hidden>
+        <div class="sheet-well-pair">
+          <label class="sheet-well-unit"><input id="f-carbs" type="text" inputmode="decimal" aria-label="Carbs per 100" value="${isEdit ? v(food.per100g.carbs) : ''}"><span class="u">g carbs</span></label>
+          <label class="sheet-well-unit"><input id="f-fat" type="text" inputmode="decimal" aria-label="Fat per 100" value="${isEdit ? v(food.per100g.fat) : ''}"><span class="u">g fat</span></label>
+        </div>
+        <label class="sheet-well-unit"><input id="f-fibre" type="text" inputmode="decimal" aria-label="Fibre per 100" value="${isEdit ? v(food.per100g.fibre) : ''}"><span class="u">g fibre</span></label>
+        <input class="sheet-well" id="f-tags" placeholder="Tags, comma separated" value="${isEdit ? escapeHtml((food.tags ?? []).join(', ')) : ''}">
+        <select class="sheet-well" id="f-cook" style="font-weight:600;">
+          <option value="">No cooking estimate</option>
+          ${COOK_CATEGORIES.map(c => `<option value="${c.id}" ${isEdit && food.cookCategory === c.id ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="form-msg error" id="f-error" hidden></div>
+      <div class="form-msg" id="f-warn" hidden style="color:var(--accent);"></div>
+      <button type="button" class="sheet-primary" id="f-save">${isEdit ? 'Save changes' : 'Save food'}</button>
+    </div>
+  `);
+
+  document.getElementById('f-cancel').addEventListener('click', closeModal);
+  document.getElementById('f-more-toggle').addEventListener('click', () => {
+    const m = document.getElementById('f-more');
+    m.hidden = !m.hidden;
+    document.getElementById('f-more-toggle').textContent = m.hidden
+      ? 'More — carbs, fat, fibre, tags, cooking'
+      : 'Fewer fields';
+  });
+
+  document.getElementById('f-unit-chips').addEventListener('click', e => {
+    const b = e.target.closest('[data-unit]'); if (!b) return;
+    st.unit = b.dataset.unit;
+    document.querySelectorAll('#f-unit-chips .sheet-chip').forEach(c => c.classList.toggle('active', c === b));
+    document.getElementById('f-portion-u').textContent = st.unit;
+  });
+  document.getElementById('f-source-chips').addEventListener('click', e => {
+    const b = e.target.closest('[data-source]'); if (!b) return;
+    st.source = b.dataset.source;
+    document.querySelectorAll('#f-source-chips .sheet-chip').forEach(c => c.classList.toggle('active', c === b));
+  });
+
+  if (!isEdit && !prefillName) document.getElementById('f-name').focus();
+
+  let dupAck = false;
   document.getElementById('f-save').addEventListener('click', async () => {
-    const num = v => (v === '' ? null : Number(v));
-    const enteredName = document.getElementById('f-name').value.trim();
+    const num = x => { const s = String(x).trim().replace(',', '.'); return s === '' ? null : Number(s); };
+    const name = document.getElementById('f-name').value.trim();
 
-    const similar = findSimilarFoods(enteredName, cache.foods, { excludeId: isEdit ? food.id : null });
-    if (similar.length && !duplicateAcknowledged) {
-      const warnEl = document.getElementById('f-warn');
-      warnEl.innerHTML = `You already have <strong>${escapeHtml(similar[0].name)}</strong>. Tap Save again to add this anyway.`;
-      warnEl.hidden = false;
-      duplicateAcknowledged = true;
+    const similar = findSimilarFoods(name, cache.foods, { excludeId: isEdit ? food.id : null });
+    if (similar.length && !dupAck) {
+      const w = document.getElementById('f-warn');
+      w.innerHTML = `You already have <strong>${escapeHtml(similar[0].name)}</strong>. Tap Save again to add anyway.`;
+      w.hidden = false;
+      dupAck = true;
       return;
     }
 
     const obj = {
-      id: isEdit ? food.id : slugify(enteredName),
-      name: enteredName,
+      id: isEdit ? food.id : slugify(name),
+      name,
       per100g: {
         kcal: num(document.getElementById('f-kcal').value),
         protein: num(document.getElementById('f-protein').value),
@@ -1394,21 +1437,20 @@ function openFoodModal(food) {
         fibre: num(document.getElementById('f-fibre').value),
       },
       defaultPortionG: num(document.getElementById('f-portion').value) ?? 100,
-      source: document.getElementById('f-source').value,
-      unit: fUnitSelect.value,
+      source: st.source,
+      unit: st.unit,
       tags: document.getElementById('f-tags').value.split(',').map(t => t.trim()).filter(Boolean),
-      cookCategory: document.getElementById('f-cook-category').value || null,
+      cookCategory: document.getElementById('f-cook').value || null,
     };
     const errors = validateFood(obj);
     const errEl = document.getElementById('f-error');
-    if (errors.length) {
-      errEl.textContent = errors.join(' '); errEl.hidden = false;
-      return;
-    }
+    if (errors.length) { errEl.textContent = errors.join(' '); errEl.hidden = false; return; }
+
     await db.put('foods', obj);
     await refreshCache();
     closeModal();
-    renderFoods();
+    if (onSaved) onSaved(obj);
+    else renderFoods();
   });
 }
 
@@ -1788,7 +1830,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       portions: document.getElementById('r-portions').value,
       rows: rows.map(r => ({ ...r })),
     };
-    openQuickAddFoodModal('', {
+    openFoodModal(null, {
       onSaved: async food => {
         const emptyRow = snapshot.rows.find(r => !r.foodId);
         if (emptyRow) emptyRow.foodId = food.id;
@@ -2457,24 +2499,80 @@ function buildWeightChart(series) {
 // key, so changing it on an edit deletes the old-dated record rather than leaving a duplicate.
 function openWeightModal(existing) {
   const isEdit = !!existing;
-  const body = `
-    <h2>${isEdit ? 'Edit weight' : 'Log a weight'}</h2>
-    <label class="field-label" for="w-date">Date</label>
-    <input class="text-input" id="w-date" type="date" max="${todayISO()}" style="margin-bottom:12px;" value="${isEdit ? existing.date : todayISO()}">
-    <label class="field-label" for="w-kg">Weight (kg)</label>
-    <input class="text-input" id="w-kg" type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" style="margin-bottom:12px;" value="${isEdit ? existing.kg : ''}">
-    <div class="form-msg error" id="w-error" hidden></div>
-    <div class="modal-actions">
-      ${isEdit
-        ? '<button type="button" class="secondary-btn" id="w-delete">Delete</button>'
-        : '<button type="button" class="secondary-btn" id="w-cancel">Cancel</button>'}
-      <button type="button" class="primary-btn" id="w-save">Save</button>
-    </div>
-  `;
-  openModal(body);
+  const state = {
+    date: isEdit ? existing.date : todayISO(),
+    kg: isEdit ? existing.kg : (weightSeries(cache.weightLog).at(-1)?.kg ?? 70),
+  };
 
-  const cancelBtn = document.getElementById('w-cancel');
-  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  openModal(`
+    <div class="sheet">
+      <div class="sheet-title-row">
+        <h2>${isEdit ? 'Edit weight' : 'Log a weight'}</h2>
+        <button type="button" class="sheet-cancel" id="w-cancel">Cancel</button>
+      </div>
+
+      <div class="sheet-big-stepper">
+        <button type="button" id="w-minus" aria-label="Down 0.1 kg">−</button>
+        <div class="sheet-big-value">
+          <input id="w-kg" type="text" inputmode="decimal" aria-label="Weight in kilograms">
+          <span class="u">kg</span>
+        </div>
+        <button type="button" id="w-plus" aria-label="Up 0.1 kg">+</button>
+      </div>
+
+      <div class="sheet-row">
+        <span>Date</span>
+        <input type="date" class="sheet-date-chip" id="w-date" max="${todayISO()}" value="${state.date}" aria-label="Date">
+      </div>
+
+      <div class="sheet-fig-strip">
+        <div><div id="w-eff-avg">—</div><div>new average</div></div>
+        <div><div id="w-eff-delta">—</div><div id="w-eff-span">trend</div></div>
+      </div>
+
+      <div class="sheet-help">Weighed first thing, before breakfast, gives the steadiest trend.</div>
+      <div class="form-msg error" id="w-error" hidden></div>
+      ${isEdit ? '<button type="button" class="sheet-more" id="w-delete" style="color:var(--accent);">Delete this entry</button>' : ''}
+      <button type="button" class="sheet-primary" id="w-save">Save weight</button>
+    </div>
+  `);
+
+  const kgInput = document.getElementById('w-kg');
+  const round1 = n => Math.round(n * 10) / 10;
+
+  const syncEffect = () => {
+    // Recompute the average and the first→now delta as if this entry were saved.
+    const others = weightSeries(cache.weightLog).filter(w => w.date !== state.date);
+    const merged = [...others, { date: state.date, kg: state.kg }].sort((a, b) => a.date.localeCompare(b.date));
+    const avg = merged.reduce((s, w) => s + w.kg, 0) / merged.length;
+    document.getElementById('w-eff-avg').textContent = avg.toFixed(1);
+    if (merged.length >= 2 && merged[0].date !== state.date) {
+      const d = state.kg - merged[0].kg;
+      document.getElementById('w-eff-delta').textContent = `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(round1(d)).toFixed(1)}`;
+      const weeks = Math.max(1, Math.round((Date.parse(state.date) - Date.parse(merged[0].date)) / (7 * 86400000)));
+      document.getElementById('w-eff-span').textContent = `${weeks} week${weeks === 1 ? '' : 's'}`;
+    } else {
+      document.getElementById('w-eff-delta').textContent = '—';
+      document.getElementById('w-eff-span').textContent = 'trend';
+    }
+  };
+  const showKg = () => { kgInput.value = state.kg.toFixed(1); };
+  const step = delta => { state.kg = round1(Math.max(0.1, state.kg + delta)); showKg(); syncEffect(); };
+
+  showKg();
+  syncEffect();
+  document.getElementById('w-minus').addEventListener('click', () => step(-0.1));
+  document.getElementById('w-plus').addEventListener('click', () => step(0.1));
+  kgInput.addEventListener('input', () => {
+    const n = Number(kgInput.value.replace(',', '.'));
+    if (n > 0) { state.kg = n; syncEffect(); }
+  });
+  kgInput.addEventListener('blur', showKg);
+  document.getElementById('w-date').addEventListener('change', e => {
+    state.date = e.target.value || todayISO();
+    syncEffect();
+  });
+  document.getElementById('w-cancel').addEventListener('click', closeModal);
 
   const deleteBtn = document.getElementById('w-delete');
   if (deleteBtn) deleteBtn.addEventListener('click', async () => {
@@ -2485,16 +2583,15 @@ function openWeightModal(existing) {
   });
 
   document.getElementById('w-save').addEventListener('click', async () => {
-    const date = document.getElementById('w-date').value;
-    const kg = Number(document.getElementById('w-kg').value.trim().replace(',', '.'));
+    const kg = round1(Number(kgInput.value.replace(',', '.')));
     const errEl = document.getElementById('w-error');
-    if (!date || !(kg > 0)) {
+    if (!state.date || !(kg > 0)) {
       errEl.textContent = 'Enter a date and a weight above zero.';
       errEl.hidden = false;
       return;
     }
-    if (isEdit && existing.date !== date) await db.remove('weightLog', existing.date);
-    await db.put('weightLog', { date, kg });
+    if (isEdit && existing.date !== state.date) await db.remove('weightLog', existing.date);
+    await db.put('weightLog', { date: state.date, kg });
     await refreshCache();
     closeModal();
     afterWeightChange('Weight saved');
