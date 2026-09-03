@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Redesign foundation — review</title>
+<!-- Uses the real token system + self-hosted fonts from the redesign branch. -->
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* ---- preview scaffold only (not shipped) ---- */
+  body { padding: 0; }
+  .pv-wrap { max-width: 460px; margin: 0 auto; padding: 24px 18px 80px; }
+  .pv-h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .pv-lede { color: var(--text-secondary); font-size: 14px; line-height: 1.5; margin: 0 0 28px; }
+  .pv-sec { margin: 34px 0 12px; font-family: var(--font-figure); font-size: 11px; font-weight: 400;
+            letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-secondary); }
+  .pv-note { font-size: 12px; color: var(--text-tertiary); margin: 6px 0 0; line-height: 1.5; }
+  .pv-card { background: var(--raised); border: 1.5px solid var(--line); border-radius: var(--radius-card);
+             padding: 16px; margin-bottom: 12px; }
+  .pv-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .pv-stack { display: flex; flex-direction: column; gap: 10px; }
+
+  /* palette */
+  .pv-swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pv-sw { border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--raised); }
+  .pv-sw-chip { height: 46px; }
+  .pv-sw-meta { padding: 7px 9px; font-size: 11px; line-height: 1.4; }
+  .pv-sw-meta b { font-weight: 700; }
+  .pv-sw-meta span { color: var(--text-secondary); font-family: var(--font-figure); }
+
+  /* type */
+  .t-title { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+  .t-card { font-size: 16px; font-weight: 700; }
+  .t-row { font-size: 15px; font-weight: 600; }
+  .t-body { font-size: 15px; font-weight: 400; line-height: 1.55; color: var(--text-primary); }
+  .t-meta { font-size: 13px; color: var(--text-secondary); }
+  .t-num-hero { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 64px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .t-num-2 { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 38px; font-weight: 700; letter-spacing: -0.03em; }
+  .t-num-row { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; }
+
+  /* surfaces */
+  .pv-surf { height: 60px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+             font-size: 12px; font-family: var(--font-figure); color: var(--text-secondary); }
+  .s-page { background: var(--surface); border: 1.5px dashed var(--line); }
+  .s-raised { background: var(--raised); border: 1.5px solid var(--line); }
+  .s-well { background: var(--well); box-shadow: var(--well-inset); }
+  .s-well-strong { background: var(--well-strong); border: 1.5px solid var(--well-border); box-shadow: var(--well-inset-strong); }
+
+  /* radius */
+  .pv-radii { display: flex; gap: 12px; }
+  .pv-rad { flex: 1; height: 64px; background: var(--raised); border: 1.5px solid var(--line);
+            display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: var(--font-figure); color: var(--text-secondary); }
+
+  /* ===== components built to the handoff spec ===== */
+
+  /* hero readout */
+  .hero { background: var(--raised); border: 1.5px solid var(--line); border-radius: var(--radius-card);
+          padding: 20px; display: flex; align-items: center; gap: 18px; margin-bottom: 12px; }
+  .hero.compact { padding: 16px 20px; gap: 16px; }
+  .hero-label { font-family: var(--font-figure); font-size: 11px; letter-spacing: 0.16em;
+                text-transform: uppercase; color: var(--text-secondary); }
+  .hero-num { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 64px;
+              font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .hero-num.sm { font-size: 38px; letter-spacing: -0.03em; line-height: 1.1; }
+  .hero-num.over { color: var(--accent); }
+  .hero-sub { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-secondary); }
+  .hero-met { font-size: 14px; font-weight: 700; }
+  .hero-met.over { color: var(--accent); }
+  .hero-flex { display: flex; flex-direction: column; gap: 2px; }
+  .hero-baseline { display: flex; align-items: baseline; gap: 8px; }
+
+  /* meal section */
+  .meal { background: var(--raised); border: 1.5px solid var(--line); border-radius: var(--radius-card);
+          overflow: hidden; margin-bottom: 12px; }
+  .meal-hd { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
+             background: var(--text-primary); color: var(--on-dark); }
+  .meal-hd .l { display: flex; align-items: baseline; gap: 8px; }
+  .meal-hd .name { font-size: 14px; font-weight: 700; }
+  .meal-hd .sub { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 12px; opacity: 0.7; }
+  .meal-add { width: 30px; height: 30px; border: none; border-radius: 8px; background: var(--accent);
+              color: #fff; font-size: 17px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; }
+  .ent { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+  .ent + .ent { border-top: 1px solid var(--line-soft); }
+  .ent .m { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .ent .nm { font-size: 14px; font-weight: 600; line-height: 1.25; }
+  .ent .meta { display: flex; align-items: center; gap: 7px; }
+  .ent .amt { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-secondary); }
+  .ent .v { text-align: right; font-family: var(--font-figure); font-variant-numeric: tabular-nums; }
+  .ent .v .k { font-size: 16px; font-weight: 700; }
+  .ent .v .p { font-size: 11px; color: var(--text-secondary); }
+  .meal-empty { margin: 10px 14px 12px; padding: 14px; border-radius: 10px; background: var(--well);
+                box-shadow: var(--well-inset); font-size: 14px; color: var(--text-secondary); text-align: center; }
+  .meal-empty a { color: var(--accent); font-weight: 600; }
+
+  /* badges */
+  .bdg { height: 20px; padding: 0 6px; border-radius: 5px; font-size: 10px; font-weight: 700;
+         display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .bdg-label { background: #fff; border: 1.5px solid var(--text-primary); color: var(--text-primary); }
+  .bdg-reference { background: #fff; border: 1.5px solid var(--line); color: var(--text-secondary); }
+  .bdg-estimate { background: var(--well); border: 1.5px dashed var(--text-tertiary); color: var(--text-secondary); }
+  .bdg-draft { background: var(--accent-tint); border: 1.5px solid var(--accent); color: var(--accent); }
+  .bdg-recipe { background: var(--text-primary); color: #fff; }
+  .bdg-ro { background: #fff; border: 1.5px solid var(--line); color: var(--text-secondary); }
+  .bdg-offline { background: var(--well); border: 1.5px solid var(--text-tertiary); color: var(--text-secondary); }
+  .bdg-synced { background: #fff; border: 1.5px solid var(--text-primary); color: var(--text-primary); }
+
+  /* buttons */
+  .btn-primary { height: 56px; border: none; border-radius: 10px; background: var(--accent); color: #fff;
+                 font-size: 17px; font-weight: 700; width: 100%; }
+  .btn-primary.press { background: var(--accent-press); }
+  .btn-primary:disabled, .btn-primary.dis { background: var(--well); color: var(--text-tertiary); box-shadow: var(--well-inset); }
+  .btn-secondary { height: 56px; border-radius: 10px; background: #fff; border: 1.5px solid var(--text-primary);
+                   color: var(--text-primary); font-size: 17px; font-weight: 700; width: 100%; }
+  .btn-link { background: none; border: none; padding: 4px 0; font-size: 15px; font-weight: 700;
+              color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .btn-pill { height: 44px; padding: 0 14px; border-radius: 10px; background: #fff; border: 1.5px solid var(--line);
+              font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .btn-icon { width: 44px; height: 44px; border-radius: 10px; background: #fff; border: 1.5px solid var(--line);
+              font-size: 15px; color: var(--text-primary); }
+  .stepper { display: flex; align-items: center; gap: 0; background: var(--well); border-radius: 10px;
+             box-shadow: var(--well-inset); overflow: hidden; }
+  .stepper button { width: 44px; height: 44px; border: none; background: transparent; font-size: 22px; font-weight: 700; color: var(--text-primary); }
+  .stepper .val { flex: 1; text-align: center; font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; }
+
+  /* fields */
+  .fld { height: 50px; border-radius: 10px; background: var(--well); box-shadow: var(--well-inset);
+         border: none; padding: 0 14px; font-size: 16px; width: 100%; color: var(--text-primary); font-family: var(--font-sans); }
+  .fld::placeholder { color: var(--text-tertiary); }
+  .fld.focus { background: var(--well-strong); border: 1.5px solid var(--well-border); box-shadow: var(--well-inset-strong); }
+  .fld-search { display: flex; align-items: center; gap: 10px; height: 50px; border-radius: 10px;
+                background: var(--well); box-shadow: var(--well-inset); padding: 0 14px; color: var(--text-secondary); }
+  .fld-search input { flex: 1; border: none; background: transparent; font-size: 16px; color: var(--text-primary); font-family: var(--font-sans); }
+  .amt { height: 64px; border-radius: 10px; background: var(--well); box-shadow: var(--well-inset);
+         display: flex; align-items: baseline; justify-content: center; gap: 6px; }
+  .amt .n { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 34px; font-weight: 700; color: var(--text-primary); }
+  .amt .u { font-family: var(--font-figure); font-size: 14px; color: var(--text-secondary); }
+
+  /* chips */
+  .chip { height: 36px; padding: 0 14px; border-radius: 10px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+  .chip-on { background: var(--text-primary); color: #fff; font-weight: 700; }
+  .chip-off { background: #fff; border: 1.5px solid var(--line); color: var(--text-secondary); font-weight: 600; }
+  .chip-now { background: var(--accent-tint); border: 1.5px solid var(--accent); color: var(--accent); font-weight: 700; }
+  .chip-now .lab { font-size: 9px; letter-spacing: 0.12em; }
+
+  /* day-total strip */
+  .dts { background: var(--raised); border: 1.5px solid var(--line); border-radius: var(--radius-card);
+         padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; }
+  .dts .lab { font-family: var(--font-figure); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-secondary); }
+  .dts .figs { display: flex; gap: 16px; }
+  .dts .fig { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 700; }
+  .dts .fig span { font-size: 12px; color: var(--text-secondary); font-weight: 400; }
+
+  /* toast */
+  .toast { background: var(--text-primary); color: #fff; border-radius: 10px; padding: 14px 16px;
+           display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .toast .msg { font-size: 14px; font-weight: 600; }
+  .toast .act { font-size: 13px; font-weight: 700; color: #F0B9C0; text-decoration: underline; }
+
+  /* skeleton */
+  .sk { height: 11px; border-radius: 6px; background: var(--well); margin-bottom: 10px; }
+
+  /* tab bar */
+  .tabs { display: flex; justify-content: space-around; background: var(--raised);
+          border: 1.5px solid var(--line); border-radius: var(--radius-card); padding: 10px 8px; }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; color: var(--text-secondary); }
+  .tab.on { color: var(--accent); }
+  .tab .lb { font-size: 11px; font-weight: 600; }
+  .tab.on .lb { font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="pv-wrap">
+
+  <h1 class="pv-h1">Redesign foundation</h1>
+  <p class="pv-lede">The token system, the two self-hosted variable fonts, the paper grain, and the
+  core components built to the handoff spec. This page pulls its colours and fonts from the real
+  <code>css/style.css</code> on the <code>redesign</code> branch. It's a dev preview —
+  <code>redesign-preview.html</code> gets deleted before the branch merges.</p>
+
+  <div class="pv-sec">Palette</div>
+  <div class="pv-swatches">
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--accent)"></div><div class="pv-sw-meta"><b>--accent</b> <span>#A6182A</span><br>accent · over-target · destructive</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--accent-press)"></div><div class="pv-sw-meta"><b>--accent-press</b> <span>#7C0F1F</span><br>pressed accent controls</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--accent-tint)"></div><div class="pv-sw-meta"><b>--accent-tint</b> <span>#FBE9EB</span><br>draft / over badge fill</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--text-primary)"></div><div class="pv-sw-meta"><b>--text-primary</b> <span>#16203A</span><br>ink · structure · blocked headers</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--text-secondary)"></div><div class="pv-sw-meta"><b>--text-secondary</b> <span>#5A6480</span><br>metadata, labels</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--text-tertiary)"></div><div class="pv-sw-meta"><b>--text-tertiary</b> <span>#98A0B5</span><br>disabled, placeholders</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--surface)"></div><div class="pv-sw-meta"><b>--surface</b> <span>#EEF0F5</span><br>page ground (grained)</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--raised)"></div><div class="pv-sw-meta"><b>--raised</b> <span>#FFFFFF</span><br>cards, tab bar</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--well)"></div><div class="pv-sw-meta"><b>--well</b> <span>#E1E5EE</span><br>sunken fields, steppers</div></div>
+    <div class="pv-sw"><div class="pv-sw-chip" style="background:var(--line)"></div><div class="pv-sw-meta"><b>--line</b> <span>#C9CFDC</span><br>1.5px card borders</div></div>
+  </div>
+  <p class="pv-note">One accent. Crimson carries both "good" (target met) and "danger" (over / delete),
+  so every state it marks is also paired with a glyph or label — never colour alone.</p>
+
+  <div class="pv-sec">Typography — Hanken Grotesk + Space Grotesk</div>
+  <div class="pv-card pv-stack">
+    <div class="t-title">Today — screen title 26 / 800</div>
+    <div class="t-card">Card title 16 / 700</div>
+    <div class="t-row">List row title 15 / 600</div>
+    <div class="t-body">Body copy is Hanken Grotesk 15 / 400, line-height 1.55. Metadata is small sans,
+    <b>not mono</b> — a deliberate reversal of the old design.</div>
+    <div class="t-meta">Metadata 13 / 400 · secondary</div>
+    <div class="pv-sec" style="margin:6px 0 0">section label · space grotesk 11 / 0.18em</div>
+    <hr style="border:none;border-top:1px solid var(--line-soft);margin:4px 0">
+    <div class="t-num-hero">1,385</div>
+    <div class="t-num-2">+14</div>
+    <div class="t-num-row">505 <span style="font-size:11px;color:var(--text-secondary)">47 g P</span></div>
+    <p class="pv-note">Space Grotesk is figures only — numbers, units next to numbers, section labels.
+    Always <code>tabular-nums</code> on figures that change.</p>
+  </div>
+
+  <div class="pv-sec">Surface &amp; elevation — paper grain + inset wells</div>
+  <div class="pv-card">
+    <div class="pv-stack">
+      <div class="pv-surf s-page">--surface · page ground</div>
+      <div class="pv-surf s-raised">--raised · card</div>
+      <div class="pv-surf s-well">--well · sunken field</div>
+      <div class="pv-surf s-well-strong">--well-strong · focused field</div>
+    </div>
+    <p class="pv-note">No shadows on cards, no gradients. Contrast between levels comes from the
+    grain on the ground, white cards over it, and navy colour-blocked headers.</p>
+  </div>
+
+  <div class="pv-sec">Radius — two values</div>
+  <div class="pv-radii">
+    <div class="pv-rad" style="border-radius:10px">10px · controls</div>
+    <div class="pv-rad" style="border-radius:20px">20px · cards &amp; sheets</div>
+    <div class="pv-rad" style="border-radius:6px">6px · badges</div>
+  </div>
+
+  <div class="pv-sec">Hero readout</div>
+  <div class="hero">
+    <svg width="112" height="112" viewBox="0 0 104 104" aria-hidden="true">
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--well)" stroke-width="13"></circle>
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--accent)" stroke-width="13" stroke-linecap="round" stroke-dasharray="187 277" transform="rotate(-90 52 52)"></circle>
+    </svg>
+    <div class="hero-flex">
+      <div class="hero-label">Calories left</div>
+      <div class="hero-num">665</div>
+      <div class="hero-sub">1,385 / 2,050 kcal</div>
+    </div>
+  </div>
+  <div class="hero compact">
+    <svg width="66" height="66" viewBox="0 0 104 104" aria-hidden="true">
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--well)" stroke-width="14"></circle>
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--text-primary)" stroke-width="14" stroke-linecap="round" stroke-dasharray="277 277" transform="rotate(-90 52 52)"></circle>
+    </svg>
+    <div class="hero-flex">
+      <div class="hero-label">Protein</div>
+      <div class="hero-baseline"><div class="hero-num sm">+14</div><div class="hero-met">&#10003; target met</div></div>
+      <div class="hero-sub">139 / 125 g</div>
+    </div>
+  </div>
+  <div class="hero compact">
+    <svg width="66" height="66" viewBox="0 0 104 104" aria-hidden="true">
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--well)" stroke-width="14"></circle>
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="277 277" transform="rotate(-90 52 52)"></circle>
+    </svg>
+    <div class="hero-flex">
+      <div class="hero-label">Calories</div>
+      <div class="hero-baseline"><div class="hero-num sm over">+180</div><div class="hero-met over">&#9650; over</div></div>
+      <div class="hero-sub">2,230 / 2,050 kcal</div>
+    </div>
+  </div>
+  <div class="hero compact">
+    <svg width="66" height="66" viewBox="0 0 104 104" aria-hidden="true">
+      <circle cx="52" cy="52" r="44" fill="none" stroke="var(--well)" stroke-width="14" stroke-dasharray="6 10"></circle>
+    </svg>
+    <div class="hero-flex">
+      <div class="hero-label">Calories left</div>
+      <div class="hero-sub" style="font-size:14px;margin:4px 0 6px">Set a target to see what's left</div>
+      <button class="btn-link" style="align-self:flex-start">Set targets</button>
+    </div>
+  </div>
+
+  <div class="pv-sec">Meal section</div>
+  <div class="meal">
+    <div class="meal-hd">
+      <div class="l"><span class="name">Breakfast</span><span class="sub">382 · 38 g</span></div>
+      <button class="meal-add" aria-label="Add to Breakfast">+</button>
+    </div>
+    <div class="ent">
+      <div class="m">
+        <div class="nm">Tia's Granola — No Sugar Added</div>
+        <div class="meta"><span class="amt">55 g</span><span class="bdg bdg-label">&#9635; label</span></div>
+      </div>
+      <div class="v"><div class="k">270</div><div class="p">12 g P</div></div>
+    </div>
+    <div class="ent">
+      <div class="m">
+        <div class="nm">Grilled fish plate (restaurant)</div>
+        <div class="meta"><span class="amt">350 g</span><span class="bdg bdg-estimate">&#9676; estimate</span></div>
+      </div>
+      <div class="v"><div class="k">497</div><div class="p">54 g P</div></div>
+    </div>
+    <div class="ent">
+      <div class="m">
+        <div class="nm">Batch A — chicken &amp; rice</div>
+        <div class="meta"><span class="amt">480 g</span><span class="bdg bdg-recipe">&#9636; recipe</span></div>
+      </div>
+      <div class="v"><div class="k">505</div><div class="p">47 g P</div></div>
+    </div>
+  </div>
+  <div class="meal">
+    <div class="meal-hd">
+      <div class="l"><span class="name">Lunch</span><span class="sub"></span></div>
+      <button class="meal-add" aria-label="Add to Lunch">+</button>
+    </div>
+    <div class="meal-empty">Nothing logged for Lunch · <a href="#">add something</a></div>
+  </div>
+
+  <div class="pv-sec">Badges</div>
+  <div class="pv-card pv-row">
+    <span class="bdg bdg-label">&#9635; label</span>
+    <span class="bdg bdg-reference">&#9640; reference</span>
+    <span class="bdg bdg-estimate">&#9676; estimate</span>
+    <span class="bdg bdg-draft">&#8987; draft</span>
+    <span class="bdg bdg-recipe">&#9636; recipe</span>
+    <span class="bdg bdg-ro">&#128274; read only</span>
+    <span class="bdg bdg-offline">&#8856; offline</span>
+    <span class="bdg bdg-synced">&#10227; synced</span>
+  </div>
+  <p class="pv-note">Glyphs here are placeholders for a 1.8px-stroke in-repo SVG icon set — swapped in
+  before the branch merges. Each badge stays distinguishable without colour.</p>
+
+  <div class="pv-sec">Buttons</div>
+  <div class="pv-card pv-stack">
+    <button class="btn-primary">Add to Breakfast</button>
+    <button class="btn-primary press">Pressed</button>
+    <button class="btn-primary dis">Disabled</button>
+    <button class="btn-secondary">Log something else</button>
+    <div class="pv-row">
+      <button class="btn-link">Copy today for Claude</button>
+      <button class="btn-pill">Sort</button>
+      <button class="btn-icon">&#9998;</button>
+      <button class="btn-icon" style="color:var(--accent)">&#215;</button>
+    </div>
+    <div class="stepper"><button>&#8722;</button><div class="val">55 g</div><button>+</button></div>
+  </div>
+
+  <div class="pv-sec">Fields</div>
+  <div class="pv-card pv-stack">
+    <input class="fld" placeholder="Name">
+    <div class="fld-search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input placeholder="Search foods">
+    </div>
+    <input class="fld focus" value="gran">
+    <div class="amt"><span class="n">55</span><span class="u">g</span></div>
+  </div>
+
+  <div class="pv-sec">Chips</div>
+  <div class="pv-card pv-row">
+    <span class="chip chip-on">Foods</span>
+    <span class="chip chip-off">Recipes</span>
+    <span class="chip chip-off">Wed 3 Sep &#9662;</span>
+    <span class="chip chip-on">Breakfast &#9662;</span>
+    <span class="chip chip-now">3 <span class="lab">NOW</span></span>
+  </div>
+
+  <div class="pv-sec">Day-total strip</div>
+  <div class="dts">
+    <span class="lab">Day so far</span>
+    <span class="figs"><span class="fig">1,385 <span>kcal</span></span><span class="fig">139 <span>g</span></span></span>
+  </div>
+
+  <div class="pv-sec">Toast</div>
+  <div class="toast"><span class="msg">Entry deleted</span><span class="act">Undo</span></div>
+
+  <div class="pv-sec">Loading — section skeleton</div>
+  <div class="pv-card">
+    <div class="sk" style="width:60%"></div>
+    <div class="sk" style="width:85%"></div>
+    <div class="sk" style="width:40%;margin-bottom:0"></div>
+  </div>
+
+  <div class="pv-sec">Tab bar</div>
+  <div class="tabs">
+    <div class="tab on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 6.5v5.5l3.5 2.2"></path></svg><div class="lb">Today</div></div>
+    <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 8v8M8 12h8"></path></svg><div class="lb">Log</div></div>
+    <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="4.5" width="16" height="15" rx="2.5"></rect><path d="M8 8.5h8M8 12h8M8 15.5h5"></path></svg><div class="lb">Library</div></div>
+    <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h2.5M18.5 12H21M6 8.5h1.5a1 1 0 011 1v5a1 1 0 01-1 1H6a1 1 0 01-1-1v-5a1 1 0 011-1zM16.5 8.5H18a1 1 0 011 1v5a1 1 0 01-1 1h-1.5a1 1 0 01-1-1v-5a1 1 0 011-1zM8.5 12h7"></path></svg><div class="lb">Workouts</div></div>
+    <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3.5v2.5M12 18v2.5M4.5 12H7M17 12h2.5M6.7 6.7l1.8 1.8M15.5 15.5l1.8 1.8M17.3 6.7l-1.8 1.8M8.5 15.5l-1.8 1.8"></path></svg><div class="lb">Settings</div></div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1343,3 +1343,377 @@ body.modal-open { overflow: hidden; }
 @keyframes spinner-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================================
+   REDESIGN COMPONENT LAYER
+   Built screen by screen against docs/redesign-handoff/. Appended so it wins on
+   source order over the pre-redesign rules above; those get deleted once every
+   screen has been converted. New markup uses the class names below.
+   ============================================================================ */
+
+/* ---- Shared primitives ------------------------------------------------------ */
+
+.rd-screen { padding-left: 20px; padding-right: 20px; }
+
+.eyebrow {
+  font-family: var(--font-figure);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.rd-title { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+
+.rd-btn-primary {
+  width: 100%;
+  height: 56px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 700;
+}
+.rd-btn-primary:active { background: var(--accent-press); }
+.rd-btn-primary:disabled {
+  background: var(--well);
+  color: var(--text-tertiary);
+  box-shadow: var(--well-inset);
+}
+
+.rd-btn-secondary {
+  width: 100%;
+  height: 56px;
+  border: 1.5px solid var(--text-primary);
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 700;
+}
+.rd-btn-secondary:active { background: var(--well); }
+.rd-btn-secondary:disabled { opacity: 0.45; }
+
+.rd-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rd-pill {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+}
+.rd-pill.active { background: var(--text-primary); border-color: var(--text-primary); color: var(--on-dark); }
+
+.rd-icon-btn {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  color: var(--text-primary);
+  font-family: var(--font-figure);
+  font-size: 15px;
+}
+.rd-icon-btn.is-danger { color: var(--accent); }
+
+.rd-field {
+  width: 100%;
+  height: 50px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--well);
+  box-shadow: var(--well-inset);
+  padding: 0 14px;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  color: var(--text-primary);
+}
+.rd-field::placeholder { color: var(--text-tertiary); }
+.rd-field:focus {
+  outline: none;
+  background: var(--well-strong);
+  box-shadow: var(--well-inset-strong), inset 0 0 0 1.5px var(--well-border);
+}
+textarea.rd-field {
+  height: auto;
+  min-height: 132px;
+  padding: 12px 14px;
+  font-family: var(--font-figure);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.rd-chip {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.rd-chip.active { background: var(--text-primary); border-color: var(--text-primary); color: var(--on-dark); font-weight: 700; }
+.rd-chip.is-now { background: var(--accent-tint); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+/* Provenance / status badges — each carries a glyph so it survives without colour. */
+.badge {
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  flex: none;
+}
+.badge-label { background: var(--raised); border: 1.5px solid var(--text-primary); color: var(--text-primary); }
+.badge-reference { background: var(--raised); border: 1.5px solid var(--line); color: var(--text-secondary); }
+.badge-estimate { background: var(--well); border: 1.5px dashed var(--text-tertiary); color: var(--text-secondary); }
+.badge-draft { background: var(--accent-tint); border: 1.5px solid var(--accent); color: var(--accent); }
+.badge-recipe { background: var(--text-primary); color: var(--on-dark); }
+.badge-readonly { background: var(--raised); border: 1.5px solid var(--line); color: var(--text-secondary); }
+.badge-offline { background: var(--well); border: 1.5px solid var(--text-tertiary); color: var(--text-secondary); }
+.badge-synced { background: var(--raised); border: 1.5px solid var(--text-primary); color: var(--text-primary); }
+
+.rd-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 6px 0; }
+.rd-skeleton-bar { height: 11px; border-radius: 6px; background: var(--well); }
+
+/* ---- Today ---------------------------------------------------------------- */
+
+.today-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0 12px;
+}
+.today-head h1 { margin-top: 4px; }
+.race-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  white-space: nowrap;
+  flex: none;
+}
+.race-chip .n { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; }
+.race-chip .t { font-size: 12px; color: var(--text-secondary); }
+
+.today-copy { margin: 0 0 12px; }
+
+.day-column { display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+
+.hero {
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.hero--sm { padding: 16px 20px; gap: 16px; }
+.hero-ring { flex: none; }
+.hero-ring .fill { transition: stroke-dasharray 700ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .hero-ring .fill { transition: none; } }
+.hero-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero-cap {
+  font-family: var(--font-figure);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.hero-num {
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: 64px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.hero--sm .hero-num { font-size: 38px; letter-spacing: -0.03em; line-height: 1.1; }
+.hero-num.is-over { color: var(--accent); }
+.hero-inline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.hero-state { font-size: 14px; font-weight: 700; }
+.hero-state.is-over { color: var(--accent); }
+.hero-sub { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-secondary); }
+.hero-sub.plain { font-family: var(--font-sans); font-size: 14px; }
+
+.meal-card {
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.meal-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--text-primary);
+  color: var(--on-dark);
+}
+.meal-card-head .l { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.meal-card-head .name { font-size: 14px; font-weight: 700; }
+.meal-card-head .sub { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 12px; opacity: 0.7; }
+.meal-card-add {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -7px -7px -7px 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.meal-card-add span {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.meal-entry { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+.meal-entry + .meal-entry { border-top: 1px solid var(--line-soft); }
+.meal-entry-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.meal-entry-name { font-size: 14px; font-weight: 600; line-height: 1.25; }
+.meal-entry-meta { display: flex; align-items: center; gap: 7px; }
+.meal-entry-amt { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-secondary); }
+.meal-entry-figs { flex: none; text-align: right; font-family: var(--font-figure); font-variant-numeric: tabular-nums; }
+.meal-entry-figs .k { display: block; font-size: 16px; font-weight: 700; }
+.meal-entry-figs .p { display: block; font-size: 11px; color: var(--text-secondary); }
+.meal-entry-act {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-figure);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.meal-entry-act.is-delete { color: var(--accent); }
+.meal-empty-well {
+  margin: 10px 14px 12px;
+  padding: 14px;
+  border-radius: var(--radius-control);
+  background: var(--well);
+  box-shadow: var(--well-inset);
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.4;
+}
+.meal-empty-well button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.day-total {
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.day-total .lab {
+  font-family: var(--font-figure);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.day-total .figs { display: flex; gap: 16px; }
+.day-total .fig { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 700; }
+.day-total .fig span { font-size: 12px; color: var(--text-secondary); font-weight: 400; }
+
+/* ---- Tab bar ------------------------------------------------------------- */
+
+.tab-bar {
+  background: var(--raised);
+  border-top: 1.5px solid var(--line);
+  padding: 8px 8px calc(24px + env(safe-area-inset-bottom));
+  justify-content: space-around;
+}
+.tab-btn {
+  gap: 4px;
+  background: transparent;
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tab-btn.active { background: transparent; color: var(--accent); font-weight: 700; }
+.tab-btn .indicator { display: none; }
+.tab-btn svg { width: 24px; height: 24px; display: block; }

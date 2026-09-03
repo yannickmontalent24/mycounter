@@ -27,6 +27,34 @@ const WEEKDAY_ROWS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const WEEKDAY_LABELS = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
 const SOURCE_GLYPH = { label: '■', reference: '□', estimate: '◇' };
 
+// A single configured race date drives the Today countdown chip (redesign §State).
+const RACE_DATE = '2026-10-25';
+function daysToRace(fromISO = todayISO()) {
+  const [ry, rm, rd] = RACE_DATE.split('-').map(Number);
+  const [fy, fm, fd] = fromISO.split('-').map(Number);
+  return Math.round((Date.UTC(ry, rm - 1, rd) - Date.UTC(fy, fm - 1, fd)) / 86400000);
+}
+
+// Thousands separator for the figures that get large (calories). Small numbers pass through.
+function fmt(n) {
+  return Math.round(n).toLocaleString('en-US');
+}
+
+// Provenance / kind badge for a resolved log entry — glyph + label so it reads without colour.
+function entryBadge(e) {
+  if (e.isRecipe) return '<span class="badge badge-recipe">▤ recipe</span>';
+  return sourceBadge(e.source);
+}
+function sourceBadge(source) {
+  const map = {
+    label: ['badge-label', '▣ label'],
+    reference: ['badge-reference', '◨ reference'],
+    estimate: ['badge-estimate', '◌ estimate'],
+  };
+  const [cls, text] = map[source] || map.estimate;
+  return `<span class="badge ${cls}">${text}</span>`;
+}
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -171,12 +199,25 @@ document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click
 // splash, which only covers boot. Kept generic so Today, History, and the day-detail sheet
 // (whose entries are always at least one Firestore round-trip away) all show the same thing.
 function showSectionLoading(container) {
-  container.innerHTML = '<div class="section-loading"><span class="section-spinner" aria-hidden="true"></span><span>Loading…</span></div>';
+  container.innerHTML = '<div class="rd-skeleton" role="status" aria-label="Loading">'
+    + '<div class="rd-skeleton-bar" style="width:60%"></div>'
+    + '<div class="rd-skeleton-bar" style="width:85%"></div>'
+    + '<div class="rd-skeleton-bar" style="width:40%"></div></div>';
 }
 
 async function renderToday({ scrollToMeal = null } = {}) {
   const dateStr = todayISO();
   document.getElementById('today-date-chip').textContent = formatDateHeader(dateStr);
+
+  const dtr = daysToRace(dateStr);
+  const raceChip = document.getElementById('today-race-chip');
+  if (dtr > 0) {
+    document.getElementById('today-race-n').textContent = dtr;
+    raceChip.hidden = false;
+  } else {
+    raceChip.hidden = true;
+  }
+
   showSectionLoading(document.getElementById('today-entry-list'));
 
   const entries = await db.entriesInRange(dateStr, dateStr);
@@ -186,14 +227,11 @@ async function renderToday({ scrollToMeal = null } = {}) {
   const protTotal = resolved.reduce((a, e) => a + e.protein, 0);
   const target = resolveTarget(cache.dayTargets, cache.overrides, dateStr, weekdayOf(dateStr));
 
-  const k = heroState(kcalTotal, target.kcal);
-  const p = heroState(protTotal, target.protein);
+  applyHero('kcal', kcalTotal, target.kcal);
+  applyHero('protein', protTotal, target.protein);
 
-  applyHero('kcal', k, kcalTotal, target.kcal);
-  applyHero('protein', p, protTotal, target.protein);
-
-  document.getElementById('today-totals-line').textContent = `${kcalTotal} kcal · ${protTotal} g`;
-  document.getElementById('today-day-total').textContent = `${kcalTotal} kcal · ${protTotal} g`;
+  document.getElementById('today-day-kcal').innerHTML = `${fmt(kcalTotal)} <span>kcal</span>`;
+  document.getElementById('today-day-protein').innerHTML = `${fmt(protTotal)} <span>g</span>`;
 
   const list = document.getElementById('today-entry-list');
   list.innerHTML = '';
@@ -219,13 +257,16 @@ async function renderToday({ scrollToMeal = null } = {}) {
 // `interactive: false` (used by the read-only day-detail view for past dates) drops the add/
 // delete/move controls and just shows what was eaten.
 function buildMealSection(meal, label, entries, { canAdd, interactive = true } = {}) {
+  entries = entries || [];
   const totals = sumMacros(entries);
   const section = el(`
-    <section class="meal-section" id="meal-section-${meal ?? 'unassigned'}">
-      <div class="meal-header">
-        <span class="meal-title">${escapeHtml(label)}</span>
-        <span class="meal-subtotal">${entries.length ? `${totals.kcal} kcal · ${totals.protein} g` : ''}</span>
-        ${canAdd ? `<button type="button" class="meal-add" data-add-meal="${meal}" aria-label="Log food under ${escapeHtml(label)}">+</button>` : ''}
+    <section class="meal-card" id="meal-section-${meal ?? 'unassigned'}">
+      <div class="meal-card-head">
+        <div class="l">
+          <span class="name">${escapeHtml(label)}</span>
+          <span class="sub">${entries.length ? `${totals.kcal} · ${totals.protein} g` : ''}</span>
+        </div>
+        ${canAdd ? `<button type="button" class="meal-card-add" data-add-meal="${meal}" aria-label="Log food under ${escapeHtml(label)}"><span aria-hidden="true">+</span></button>` : ''}
       </div>
       <div class="meal-rows"></div>
     </section>
@@ -233,33 +274,37 @@ function buildMealSection(meal, label, entries, { canAdd, interactive = true } =
 
   const rows = section.querySelector('.meal-rows');
   if (!entries.length) {
-    rows.appendChild(el(`<div class="meal-empty">—</div>`));
+    const well = el(`<div class="meal-empty-well">Nothing logged for ${escapeHtml(label)}</div>`);
+    if (canAdd) {
+      well.append(' · ');
+      const b = el('<button type="button">add something</button>');
+      b.addEventListener('click', () => openLogSheet(meal));
+      well.append(b);
+    }
+    rows.appendChild(well);
   }
   for (const e of entries) {
     const row = el(`
-      <div class="entry-row">
+      <div class="meal-entry">
         ${interactive
-          ? `<button type="button" class="entry-main" data-edit-entry="${e.id}" aria-label="Edit ${escapeHtml(e.name)}">
-               <div class="entry-name">${escapeHtml(e.name)}</div>
-               <div class="entry-detail">${e.grams} ${e.unit}</div>
+          ? `<button type="button" class="meal-entry-main" data-edit-entry="${e.id}" aria-label="Edit ${escapeHtml(e.name)}">
+               <span class="meal-entry-name">${escapeHtml(e.name)}</span>
+               <span class="meal-entry-meta"><span class="meal-entry-amt">${e.grams} ${e.unit}</span>${entryBadge(e)}</span>
              </button>`
-          : `<div class="entry-main">
-               <div class="entry-name">${escapeHtml(e.name)}</div>
-               <div class="entry-detail">${e.grams} ${e.unit}</div>
+          : `<div class="meal-entry-main">
+               <span class="meal-entry-name">${escapeHtml(e.name)}</span>
+               <span class="meal-entry-meta"><span class="meal-entry-amt">${e.grams} ${e.unit}</span>${entryBadge(e)}</span>
              </div>`}
-        <div class="entry-values">
-          <div>${e.kcal} kcal</div>
-          <div class="protein">${e.protein} g protein</div>
-        </div>
+        <span class="meal-entry-figs"><span class="k">${e.kcal}</span><span class="p">${e.protein} g P</span></span>
         ${interactive ? `
-          <button type="button" class="icon-btn-small" data-move-entry="${e.id}" aria-label="Change meal for ${escapeHtml(e.name)}">⇄</button>
-          <button type="button" class="delete-btn" aria-label="Delete ${escapeHtml(e.name)}">×</button>
+          <button type="button" class="meal-entry-act" data-move-entry="${e.id}" aria-label="Change meal for ${escapeHtml(e.name)}">⇄</button>
+          <button type="button" class="meal-entry-act is-delete" data-del-entry="${e.id}" aria-label="Delete ${escapeHtml(e.name)}">×</button>
         ` : ''}
       </div>
     `);
     if (interactive) {
       row.querySelector('[data-edit-entry]').addEventListener('click', () => openEditEntryModal(e.id));
-      row.querySelector('.delete-btn').addEventListener('click', async () => {
+      row.querySelector('[data-del-entry]').addEventListener('click', async () => {
         await db.remove('logEntries', e.id);
         renderToday({ scrollToMeal: e.meal });
       });
@@ -632,34 +677,70 @@ async function openEditEntryModal(entryId) {
   });
 }
 
-function applyHero(kind, state, consumed, target) {
-  const heroEl = document.getElementById(`${kind}-hero`);
-  const stateEl = document.getElementById(`${kind}-state`);
-  const ofTargetEl = document.getElementById(`${kind}-of-target`);
-  const ringEl = document.getElementById(`${kind}-ring`);
-  const unitWord = kind === 'kcal' ? 'kcal' : 'g';
+// kind: 'kcal' | 'protein'. For protein, reaching or passing the target is a *win*
+// (navy, "target met"); for calories, passing it is a *warning* (crimson, "over").
+function applyHero(kind, consumed, target) {
+  const numEl = document.getElementById(`hero-${kind}-num`);
+  const stateEl = document.getElementById(`hero-${kind}-state`);
+  const subEl = document.getElementById(`hero-${kind}-sub`);
+  const ringEl = document.getElementById(`ring-${kind}`);
+  const trackEl = ringEl.previousElementSibling;
+  const C = '276.5';
+  const unit = kind === 'kcal' ? 'kcal' : 'g';
 
-  if (state.remaining == null) {
-    heroEl.textContent = '—';
-    stateEl.querySelector('.mark').textContent = '·';
-    stateEl.querySelector('.text').textContent = 'no target set';
-    stateEl.style.color = 'var(--text-secondary)';
-    ofTargetEl.textContent = `${consumed} logged`;
-    ringEl.setAttribute('stroke-dasharray', '0 339.3');
-    ringEl.setAttribute('stroke', 'var(--text-secondary)');
+  const setState = (text, over) => {
+    if (!text) { stateEl.hidden = true; return; }
+    stateEl.hidden = false;
+    stateEl.textContent = text;
+    stateEl.classList.toggle('is-over', !!over);
+  };
+
+  if (target == null) {
+    numEl.textContent = '—';
+    numEl.classList.remove('is-over');
+    setState(null);
+    subEl.textContent = `${fmt(consumed)} ${unit} logged · no target set`;
+    subEl.classList.add('plain');
+    ringEl.setAttribute('stroke-dasharray', `0 ${C}`);
+    trackEl.setAttribute('stroke-dasharray', '6 10');
     return;
   }
-  const overColor = 'var(--red)';
-  const baseColor = kind === 'kcal' ? 'var(--navy)' : 'var(--teal)';
-  const color = state.over ? overColor : baseColor;
-  heroEl.textContent = (state.over ? '+' : '') + Math.abs(state.remaining);
-  heroEl.style.color = color;
-  stateEl.querySelector('.mark').textContent = state.mark;
-  stateEl.querySelector('.text').textContent = state.stateText;
-  stateEl.style.color = color;
-  ofTargetEl.textContent = `${consumed} / ${target} ${unitWord}`;
+
+  subEl.classList.remove('plain');
+  trackEl.removeAttribute('stroke-dasharray');
   ringEl.setAttribute('stroke-dasharray', ringDash(consumed, target));
-  ringEl.setAttribute('stroke', color);
+
+  const remaining = target - consumed;
+  const ofTarget = `${fmt(consumed)} / ${fmt(target)} ${unit}`;
+
+  if (consumed === 0) {
+    numEl.textContent = fmt(target);
+    numEl.classList.remove('is-over');
+    setState(null);
+    subEl.textContent = kind === 'kcal' ? 'the whole day ahead' : `${fmt(target)} g to go`;
+    return;
+  }
+
+  if (kind === 'protein' && remaining <= 0) {
+    numEl.textContent = `+${fmt(-remaining)}`;
+    numEl.classList.remove('is-over');
+    setState('✓ target met', false);
+    subEl.textContent = ofTarget;
+    return;
+  }
+
+  if (kind === 'kcal' && remaining < 0) {
+    numEl.textContent = `+${fmt(-remaining)}`;
+    numEl.classList.add('is-over');
+    setState('▲ over', true);
+    subEl.textContent = ofTarget;
+    return;
+  }
+
+  numEl.textContent = fmt(remaining);
+  numEl.classList.remove('is-over');
+  setState(null);
+  subEl.textContent = ofTarget;
 }
 
 document.getElementById('export-day-btn').addEventListener('click', async () => {

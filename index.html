@@ -42,57 +42,60 @@
 
 <div id="app" hidden>
 
-  <main id="screen-today" class="screen" data-screen="today">
-    <div class="screen-title-row">
-      <h1 class="screen-title">Today</h1>
-      <div class="date-chip" id="today-date-chip"></div>
-    </div>
-
-    <div class="hero-grid">
-      <div class="hero-card kcal">
-        <div class="ring-wrap">
-          <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
-            <circle cx="62" cy="62" r="54" fill="none" stroke="var(--navy-tint-border)" stroke-width="7"></circle>
-            <circle id="kcal-ring" class="ring-progress" cx="62" cy="62" r="54" fill="none" stroke="var(--navy)" stroke-width="7" stroke-linecap="butt" stroke-dasharray="0 339.3"></circle>
-          </svg>
-          <div class="hero-center">
-            <div class="hero-number" id="kcal-hero">0</div>
-            <div class="hero-unit">kcal</div>
-          </div>
-        </div>
-        <div class="hero-state" id="kcal-state"><span class="mark">▼</span><span class="text">left today</span></div>
-        <div class="hero-of-target" id="kcal-of-target">— / —</div>
+  <main id="screen-today" class="screen rd-screen" data-screen="today">
+    <div class="today-head">
+      <div>
+        <div class="eyebrow" id="today-date-chip"></div>
+        <h1 class="rd-title">Today</h1>
       </div>
-
-      <div class="hero-card protein">
-        <div class="ring-wrap">
-          <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
-            <circle cx="62" cy="62" r="54" fill="none" stroke="var(--teal-tint-border)" stroke-width="7"></circle>
-            <circle id="protein-ring" class="ring-progress" cx="62" cy="62" r="54" fill="none" stroke="var(--teal)" stroke-width="7" stroke-linecap="butt" stroke-dasharray="0 339.3"></circle>
-          </svg>
-          <div class="hero-center">
-            <div class="hero-number" id="protein-hero">0</div>
-            <div class="hero-unit">g protein</div>
-          </div>
-        </div>
-        <div class="hero-state" id="protein-state"><span class="mark">▼</span><span class="text">left today</span></div>
-        <div class="hero-of-target" id="protein-of-target">— / —</div>
+      <div class="race-chip" id="today-race-chip" hidden>
+        <span class="n" id="today-race-n"></span><span class="t">days to race</span>
       </div>
     </div>
 
-    <div class="section-header-row">
-      <div class="section-label">Entries</div>
-      <div class="totals" id="today-totals-line">0 kcal · 0 g</div>
+    <button type="button" class="rd-link today-copy" id="export-day-btn">Copy today for Claude</button>
+
+    <div class="day-column">
+      <div class="hero" id="hero-kcal">
+        <svg class="hero-ring" width="112" height="112" viewBox="0 0 104 104" aria-hidden="true">
+          <circle class="track" cx="52" cy="52" r="44" fill="none" stroke="var(--well)" stroke-width="13"></circle>
+          <circle class="fill" id="ring-kcal" cx="52" cy="52" r="44" fill="none" stroke="var(--accent)" stroke-width="13" stroke-linecap="round" stroke-dasharray="0 276.5" transform="rotate(-90 52 52)"></circle>
+        </svg>
+        <div class="hero-body">
+          <div class="hero-cap">Calories left</div>
+          <div class="hero-inline">
+            <span class="hero-num" id="hero-kcal-num">—</span>
+            <span class="hero-state" id="hero-kcal-state" hidden></span>
+          </div>
+          <div class="hero-sub" id="hero-kcal-sub">— / — kcal</div>
+        </div>
+      </div>
+
+      <div class="hero hero--sm" id="hero-protein">
+        <svg class="hero-ring" width="66" height="66" viewBox="0 0 104 104" aria-hidden="true">
+          <circle class="track" cx="52" cy="52" r="44" fill="none" stroke="var(--well)" stroke-width="14"></circle>
+          <circle class="fill" id="ring-protein" cx="52" cy="52" r="44" fill="none" stroke="var(--text-primary)" stroke-width="14" stroke-linecap="round" stroke-dasharray="0 276.5" transform="rotate(-90 52 52)"></circle>
+        </svg>
+        <div class="hero-body">
+          <div class="hero-cap">Protein</div>
+          <div class="hero-inline">
+            <span class="hero-num" id="hero-protein-num">—</span>
+            <span class="hero-state" id="hero-protein-state" hidden></span>
+          </div>
+          <div class="hero-sub" id="hero-protein-sub">— / — g</div>
+        </div>
+      </div>
+
+      <div id="today-entry-list"></div>
+
+      <div class="day-total">
+        <span class="lab">Day so far</span>
+        <span class="figs">
+          <span class="fig" id="today-day-kcal">0 <span>kcal</span></span>
+          <span class="fig" id="today-day-protein">0 <span>g</span></span>
+        </span>
+      </div>
     </div>
-
-    <div class="entry-list" id="today-entry-list"></div>
-
-    <div class="day-total-strip">
-      <span>Day total</span>
-      <span id="today-day-total">0 kcal · 0 g</span>
-    </div>
-
-    <button type="button" class="secondary-btn" id="export-day-btn" style="margin-top:16px;">Copy today for Claude</button>
   </main>
 
   <main id="screen-log" class="screen" data-screen="log" hidden>
@@ -270,19 +273,19 @@
 
   <nav class="tab-bar" aria-label="Screens">
     <button type="button" class="tab-btn" data-go="today" aria-label="Today">
-      <span class="icon" aria-hidden="true">◎</span><span>Today</span><span class="indicator" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 6.5v5.5l3.5 2.2"></path></svg><span>Today</span><span class="indicator" aria-hidden="true"></span>
     </button>
     <button type="button" class="tab-btn" data-go="log" aria-label="Log entry">
-      <span class="icon" aria-hidden="true">⊕</span><span>Log</span><span class="indicator" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 8v8M8 12h8"></path></svg><span>Log</span><span class="indicator" aria-hidden="true"></span>
     </button>
     <button type="button" class="tab-btn" data-go="foods" aria-label="Library">
-      <span class="icon" aria-hidden="true">▤</span><span>Library</span><span class="indicator" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4.5" width="16" height="15" rx="2.5"></rect><path d="M8 8.5h8M8 12h8M8 15.5h5"></path></svg><span>Library</span><span class="indicator" aria-hidden="true"></span>
     </button>
     <button type="button" class="tab-btn" data-go="workouts" aria-label="Workouts">
-      <span class="icon" aria-hidden="true">◫</span><span>Gym</span><span class="indicator" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h2.5M18.5 12H21M6 8.5h1.5a1 1 0 011 1v5a1 1 0 01-1 1H6a1 1 0 01-1-1v-5a1 1 0 011-1zM16.5 8.5H18a1 1 0 011 1v5a1 1 0 01-1 1h-1.5a1 1 0 01-1-1v-5a1 1 0 011-1zM8.5 12h7"></path></svg><span>Workouts</span><span class="indicator" aria-hidden="true"></span>
     </button>
     <button type="button" class="tab-btn" data-go="settings" aria-label="Settings">
-      <span class="icon" aria-hidden="true">⚙</span><span>Settings</span><span class="indicator" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3.5v2.5M12 18v2.5M4.5 12H7M17 12h2.5M6.7 6.7l1.8 1.8M15.5 15.5l1.8 1.8M17.3 6.7l-1.8 1.8M8.5 15.5l-1.8 1.8"></path></svg><span>Settings</span><span class="indicator" aria-hidden="true"></span>
     </button>
   </nav>
 

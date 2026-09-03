@@ -92,13 +92,13 @@ export function entryMacros(entry, foodsById, recipesById) {
   if (entry.foodId != null) {
     const food = foodsById.get(entry.foodId);
     if (!food) return null;
-    return { name: food.name, unit: unitOf(food), ...foodPortionMacros(food, entry.grams) };
+    return { name: food.name, unit: unitOf(food), source: food.source, isRecipe: false, ...foodPortionMacros(food, entry.grams) };
   }
   if (entry.recipeId != null) {
     const recipe = recipesById.get(entry.recipeId);
     if (!recipe) return null;
     // A batch is weighed, so recipe portions are always grams regardless of ingredient units.
-    return { name: recipe.name, unit: 'g', ...recipePortionMacros(recipe, foodsById, entry.grams) };
+    return { name: recipe.name, unit: 'g', source: null, isRecipe: true, ...recipePortionMacros(recipe, foodsById, entry.grams) };
   }
   return null;
 }
@@ -138,8 +138,11 @@ export function heroState(consumed, target) {
   };
 }
 
+// Redesign rings are r=44 in a 104 viewBox (circumference ~276.5). The fill is
+// `<filled> <circumference>` so an unfilled ring reads 0.
+export const RING_CIRCUMFERENCE = 2 * Math.PI * 44;
 export function ringDash(consumed, target) {
-  const C = 2 * Math.PI * 54;
+  const C = RING_CIRCUMFERENCE;
   if (!target || target <= 0) return `0 ${C.toFixed(1)}`;
   const frac = Math.max(0, Math.min(1, consumed / target));
   return `${(frac * C).toFixed(1)} ${C.toFixed(1)}`;
