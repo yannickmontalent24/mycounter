@@ -2350,20 +2350,25 @@ function renderWeight() {
   const series = weightSeries(cache.weightLog); // ascending by date
   const avg = averageWeight(cache.weightLog);
 
-  document.getElementById('weight-avg').textContent = avg == null ? '—' : `${avg.toFixed(1)} kg`;
+  document.getElementById('weight-avg').textContent = avg == null ? '—' : avg.toFixed(1);
   document.getElementById('weight-latest').textContent =
-    series.length ? `${series[series.length - 1].kg.toFixed(1)} kg` : '—';
+    series.length ? series[series.length - 1].kg.toFixed(1) : '—';
+
   const changeEl = document.getElementById('weight-change');
+  const changeLabel = document.getElementById('weight-change-label');
   if (series.length < 2) {
     changeEl.textContent = '—';
+    changeLabel.textContent = 'change';
   } else {
     const delta = series[series.length - 1].kg - series[0].kg;
-    changeEl.textContent = `${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg`;
+    changeEl.textContent = `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`;
+    const weeks = Math.max(1, Math.round((Date.parse(series[series.length - 1].date) - Date.parse(series[0].date)) / (7 * 86400000)));
+    changeLabel.textContent = `${weeks} week${weeks === 1 ? '' : 's'}`;
   }
 
   const chart = document.getElementById('weight-chart');
   chart.innerHTML = '';
-  chart.appendChild(buildWeightChart(series, avg));
+  chart.appendChild(buildWeightChart(series));
 
   const list = document.getElementById('weight-entries');
   list.innerHTML = '';
@@ -2373,9 +2378,9 @@ function renderWeight() {
   }
   for (const w of series.slice().reverse()) { // newest first in the list
     const row = el(`
-      <button type="button" class="weight-entry-row">
-        <span>${escapeHtml(formatDateHeader(w.date))}</span>
-        <span>${w.kg.toFixed(1)} kg <span class="chevron" aria-hidden="true">›</span></span>
+      <button type="button" class="weight-entry">
+        <span class="d">${escapeHtml(formatDateHeader(w.date))}</span>
+        <span class="k">${w.kg.toFixed(1)} kg</span>
       </button>
     `);
     row.addEventListener('click', () => openWeightModal(w));
@@ -2383,52 +2388,44 @@ function renderWeight() {
   }
 }
 
-// Inline SVG line graph of the weigh-ins. X is spaced by actual date gaps (not entry index) so
-// an irregular logging cadence reads honestly. Colours are CSS vars so it tracks the theme.
-function buildWeightChart(series, avg) {
+// The "route profile" — an inline SVG line graph of the weigh-ins. X is spaced by actual date
+// gaps (not entry index) so an irregular cadence reads honestly. Colours are CSS vars so it
+// tracks the theme; the latest reading gets a solid dot.
+function buildWeightChart(series) {
   if (series.length < 2) {
-    return el(`<div class="empty-state">Log at least two weigh-ins to see the graph.</div>`);
+    return el(`<div class="empty-state">Not enough data yet. Two weigh-ins draw a trend.</div>`);
   }
-  const W = 320, H = 170, padL = 34, padR = 12, padT = 14, padB = 22;
+  const W = 320, H = 150, padX = 12, padT = 16, padB = 30;
   const first = Date.parse(series[0].date);
   const last = Date.parse(series[series.length - 1].date);
   const span = Math.max(1, last - first);
   const kgs = series.map(w => w.kg);
-  const realLo = Math.min(...kgs), realHi = Math.max(...kgs);
-  let lo = realLo, hi = realHi;
+  let lo = Math.min(...kgs), hi = Math.max(...kgs);
   if (lo === hi) { lo -= 1; hi += 1; }
-  const margin = (hi - lo) * 0.18;
+  const margin = (hi - lo) * 0.22;
   lo -= margin; hi += margin;
 
-  const xOf = d => padL + ((Date.parse(d) - first) / span) * (W - padL - padR);
+  const xOf = d => padX + ((Date.parse(d) - first) / span) * (W - padX * 2);
   const yOf = kg => padT + (1 - (kg - lo) / (hi - lo)) * (H - padT - padB);
 
-  const pts = series.map(w => `${xOf(w.date).toFixed(1)},${yOf(w.kg).toFixed(1)}`).join(' ');
-  const dots = series
-    .map(w => `<circle cx="${xOf(w.date).toFixed(1)}" cy="${yOf(w.kg).toFixed(1)}" r="2.5" fill="var(--navy)"></circle>`)
-    .join('');
-
-  let avgLine = '';
-  if (avg != null && avg > lo && avg < hi) {
-    const ay = yOf(avg).toFixed(1);
-    avgLine = `
-      <line x1="${padL}" y1="${ay}" x2="${W - padR}" y2="${ay}" stroke="var(--teal)" stroke-width="1" stroke-dasharray="4 3"></line>
-      <text x="${W - padR}" y="${(yOf(avg) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--teal)">avg ${avg.toFixed(1)}</text>`;
-  }
-
-  const fmtX = d => { const [, m, day] = d.split('-'); return `${day}/${m}`; };
+  const path = series.map((w, i) => `${i ? 'L' : 'M'}${xOf(w.date).toFixed(1)} ${yOf(w.kg).toFixed(1)}`).join(' ');
+  const gridY = [0, 1, 2].map(i => padT + (i / 2) * (H - padT - padB));
+  const grid = gridY.map(y => `<line x1="0" y1="${y.toFixed(1)}" x2="${W}" y2="${y.toFixed(1)}" stroke="var(--line-soft)" stroke-width="1"></line>`).join('');
+  const dots = series.map((w, i) => {
+    const last = i === series.length - 1;
+    return last
+      ? `<circle cx="${xOf(w.date).toFixed(1)}" cy="${yOf(w.kg).toFixed(1)}" r="5" fill="var(--accent)"></circle>`
+      : `<circle cx="${xOf(w.date).toFixed(1)}" cy="${yOf(w.kg).toFixed(1)}" r="3.5" fill="var(--raised)" stroke="var(--accent)" stroke-width="2.5"></circle>`;
+  }).join('');
+  const fmtX = d => { const dt = new Date(Date.parse(d)); return `${dt.getDate()} ${dt.toLocaleDateString('en-GB', { month: 'short' })}`; };
 
   return el(`
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Body weight over time">
-      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="var(--hairline)"></line>
-      <line x1="${padL}" y1="${(H - padB)}" x2="${W - padR}" y2="${H - padB}" stroke="var(--hairline)"></line>
-      ${avgLine}
-      <polyline points="${pts}" fill="none" stroke="var(--navy)" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"></polyline>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Body weight trend">
+      ${grid}
+      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>
       ${dots}
-      <text x="${padL - 6}" y="${(yOf(realHi) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-secondary)">${realHi.toFixed(1)}</text>
-      <text x="${padL - 6}" y="${(yOf(realLo) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-secondary)">${realLo.toFixed(1)}</text>
-      <text x="${padL}" y="${H - 6}" text-anchor="start" font-size="9" fill="var(--text-secondary)">${fmtX(series[0].date)}</text>
-      <text x="${W - padR}" y="${H - 6}" text-anchor="end" font-size="9" fill="var(--text-secondary)">${fmtX(series[series.length - 1].date)}</text>
+      <text x="${padX}" y="${H - 8}" font-family="var(--font-figure)" font-size="11" fill="var(--text-secondary)">${fmtX(series[0].date)}</text>
+      <text x="${W - padX}" y="${H - 8}" text-anchor="end" font-family="var(--font-figure)" font-size="11" fill="var(--text-secondary)">${fmtX(series[series.length - 1].date)}</text>
     </svg>
   `);
 }

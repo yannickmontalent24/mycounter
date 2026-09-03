@@ -220,29 +220,24 @@
     <div class="history-list" id="history-list"></div>
   </main>
 
-  <main id="screen-weight" class="screen" data-screen="weight" hidden>
-    <button type="button" class="link-btn" id="weight-back" style="margin-bottom:10px;">← Back to settings</button>
-    <h1 class="screen-title" style="margin-bottom:16px;">Body weight</h1>
-
-    <div class="weight-summary">
-      <div class="weight-summary-stat">
-        <span class="weight-summary-label">Average</span>
-        <span class="weight-summary-value" id="weight-avg">—</span>
-      </div>
-      <div class="weight-summary-stat">
-        <span class="weight-summary-label">Latest</span>
-        <span class="weight-summary-value" id="weight-latest">—</span>
-      </div>
-      <div class="weight-summary-stat">
-        <span class="weight-summary-label">Change</span>
-        <span class="weight-summary-value" id="weight-change">—</span>
-      </div>
+  <main id="screen-weight" class="screen rd-screen" data-screen="weight" hidden>
+    <div class="subscreen-head">
+      <button type="button" class="rd-icon-btn" id="weight-back" aria-label="Back to settings">‹</button>
+      <h1 class="rd-title">Body weight</h1>
     </div>
 
-    <div class="weight-chart-wrap" id="weight-chart"></div>
+    <div class="weight-body">
+      <div class="weight-stats">
+        <div class="weight-stat"><span class="v" id="weight-latest">—</span><span class="l">latest kg</span></div>
+        <div class="weight-stat"><span class="v" id="weight-avg">—</span><span class="l">average</span></div>
+        <div class="weight-stat"><span class="v" id="weight-change">—</span><span class="l" id="weight-change-label">change</span></div>
+      </div>
 
-    <button type="button" class="secondary-btn" id="weight-add-btn" style="margin:16px 0 10px;">Log a weight</button>
-    <div class="entry-list" id="weight-entries"></div>
+      <div class="weight-chart-card" id="weight-chart"></div>
+
+      <button type="button" class="rd-btn-primary" id="weight-add-btn">Log a weight</button>
+      <div class="food-card" id="weight-entries"></div>
+    </div>
   </main>
 
   <main id="screen-settings" class="screen" data-screen="settings" hidden>
