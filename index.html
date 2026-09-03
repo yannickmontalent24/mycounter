@@ -17,8 +17,9 @@
 <body>
 
 <div id="splash-screen" class="splash-screen" role="status" aria-live="polite">
-  <img src="icons/icon-192.png" alt="" class="splash-icon" width="96" height="96">
-  <div class="splash-spinner" aria-hidden="true"></div>
+  <img src="icons/icon-192.png" alt="" class="splash-icon" width="120" height="120">
+  <div class="splash-wordmark">mycounter</div>
+  <div class="splash-track" aria-hidden="true"><div class="splash-track-fill"></div></div>
   <span class="sr-only">Loading…</span>
 </div>
 
@@ -27,16 +28,24 @@
 </div>
 
 <div id="login-screen" class="login-screen" hidden>
-  <div class="login-card">
-    <div class="login-title">Calorie &amp; Protein Tracker</div>
-    <div class="login-sub">Sign in to continue</div>
-    <label class="field-label" for="login-email">Email</label>
-    <input class="text-input" id="login-email" type="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" style="margin-bottom:12px;">
-    <label class="field-label" for="login-password">Password</label>
-    <input class="text-input" id="login-password" type="password" autocomplete="current-password" style="margin-bottom:12px;">
-    <div class="form-msg error" id="login-error" hidden></div>
-    <button type="button" class="primary-btn" id="login-submit" disabled>Sign in</button>
-    <div class="login-note" id="login-note">Signing in for the first time on a device needs a connection. After that the app works offline.</div>
+  <div class="login-inner">
+    <div class="login-brand">
+      <img src="icons/icon-192.png" alt="" width="96" height="96">
+      <div class="login-wordmark">mycounter</div>
+    </div>
+    <div class="login-card">
+      <label class="login-field">
+        <span class="eyebrow">Email</span>
+        <input class="rd-field" id="login-email" type="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false">
+      </label>
+      <label class="login-field">
+        <span class="eyebrow">Password</span>
+        <input class="rd-field" id="login-password" type="password" autocomplete="current-password">
+      </label>
+      <div class="form-msg error" id="login-error" hidden></div>
+      <button type="button" class="rd-btn-primary" id="login-submit" disabled>Sign in</button>
+      <div class="login-note" id="login-note">The first sign-in needs a connection. After that the app works offline.</div>
+    </div>
   </div>
 </div>
 

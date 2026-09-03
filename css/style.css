@@ -2300,3 +2300,41 @@ input.log-date-chip::-webkit-calendar-picker-indicator { opacity: 0.5; }
 .history-card-figs .figs .u { display: block; font-size: 11px; color: var(--text-secondary); letter-spacing: 0.1em; text-transform: uppercase; }
 .history-card-figs .diff { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; color: var(--text-secondary); }
 .history-card-figs .diff.is-over { color: var(--accent); }
+
+/* ---- Login + splash ---------------------------------------------- */
+.login-inner { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 22px; }
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.login-brand img { display: block; width: 96px; height: 96px; border-radius: 22px; }
+.login-wordmark { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.login-card {
+  background: var(--raised);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-field { display: flex; flex-direction: column; gap: 7px; }
+.login-field .rd-field { height: 52px; }
+.login-note { font-size: 13px; line-height: 1.5; color: var(--text-secondary); text-align: center; margin: 0; }
+.login-card .form-msg.error { color: var(--accent); font-size: 13px; }
+
+.splash-screen { background: var(--text-primary); gap: 20px; }
+.splash-icon { width: 120px; height: 120px; border-radius: 26px; }
+.splash-wordmark { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--on-dark); }
+.splash-track { width: 96px; height: 3px; border-radius: 2px; background: var(--on-dark-dim); overflow: hidden; }
+.splash-track-fill {
+  width: 42%;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: splash-load 1.4s ease-in-out infinite;
+}
+@keyframes splash-load {
+  0% { margin-left: -42%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-track-fill { animation: none; margin-left: 27%; }
+}
