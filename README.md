@@ -1,4 +1,4 @@
-# Calorie & Protein Tracker
+# mycounter — calorie & protein tracker
 
 Single-user, offline-first PWA that answers "how much can I still eat today?" No backend,
 no build step — plain HTML/CSS/JS with IndexedDB for storage. Built from `calorietrackerbrief.md`

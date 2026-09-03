@@ -1487,14 +1487,12 @@ function openImportPreview(plan) {
            <option value="skip">Skip</option>
            <option value="replace">Replace</option>
          </select>`
-      : `<span class="source-badge" style="border:1px solid var(--teal-tint-border); background:var(--teal-badge-bg);">
-           <span class="word" style="color:var(--teal);">new</span>
-         </span>`;
+      : '<span class="badge badge-draft">new</span>';
     return `
       <div class="food-row">
         <div class="main">
           <div class="name">${escapeHtml(it.obj.name)}</div>
-          <div class="per100">${it.kind} · ${macros}</div>
+          <div class="meta"><span class="per">${it.kind} · ${macros}</span></div>
         </div>
         ${control}
       </div>
@@ -1504,7 +1502,7 @@ function openImportPreview(plan) {
   openModal(`
     <h2>Review import</h2>
     <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">${summary}</p>
-    <div class="entry-list">${rowsHtml}</div>
+    <div class="food-card" style="margin-top:6px;">${rowsHtml}</div>
     <div class="modal-actions">
       <button type="button" class="secondary-btn" id="ip-cancel">Cancel</button>
       <button type="button" class="primary-btn" id="ip-confirm">Import</button>
@@ -2207,8 +2205,8 @@ async function openDayDetailModal(dateStr) {
   if (!document.getElementById('dd-body')) return;
 
   body.innerHTML = '';
-  body.appendChild(el(`<div style="font-family:var(--font-mono); font-size:0.8125rem; color:var(--text-secondary); margin-bottom:10px;">${kcalTotal} kcal · ${protTotal} g${targetText}</div>`));
-  const list = el(`<div class="entry-list"></div>`);
+  body.appendChild(el(`<div class="u-figure" style="font-size:0.8125rem; color:var(--text-secondary); margin-bottom:12px;">${fmt(kcalTotal)} kcal · ${protTotal} g${targetText}</div>`));
+  const list = el(`<div style="display:flex; flex-direction:column; gap:12px;"></div>`);
   body.appendChild(list);
 
   const { groups, unsorted } = groupEntriesByMeal(resolved);
