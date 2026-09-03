@@ -1,13 +1,13 @@
 {
-  "name": "Calorie & Protein Tracker",
-  "short_name": "Calories",
+  "name": "mycounter",
+  "short_name": "mycounter",
   "description": "Single-user offline calorie and protein logging instrument.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#FAFAF7",
-  "theme_color": "#FAFAF7",
+  "background_color": "#16203A",
+  "theme_color": "#EEF0F5",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },

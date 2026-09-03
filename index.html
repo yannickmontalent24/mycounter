@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Calorie &amp; Protein Tracker</title>
+<title>mycounter</title>
 <meta name="theme-color" content="#EEF0F5">
 <meta name="description" content="Offline calorie and protein logging instrument.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Calories">
+<meta name="apple-mobile-web-app-title" content="mycounter">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -152,7 +152,7 @@
     <div class="library-head">
       <div class="library-head-top">
         <h1 class="rd-title">Library</h1>
-        <span class="badge badge-synced" id="library-sync-badge">⟳ synced</span>
+        <span class="badge badge-synced" id="library-sync-badge"><svg class="badge-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.7 4.6A5 5 0 003.4 6.2M3 3.6v2.8h2.8M3.3 11.4a5 5 0 009.3-1.6M13 12.4V9.6h-2.8"></path></svg> synced</span>
       </div>
       <div class="rd-chip-row" id="library-mode-chips">
         <button type="button" class="rd-chip active" data-mode="foods">Foods</button>
@@ -202,7 +202,7 @@
     <div class="workout-head">
       <div class="library-head-top">
         <h1 class="rd-title">Workouts</h1>
-        <span class="badge badge-readonly">🔒 read only</span>
+        <span class="badge badge-readonly"><svg class="badge-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"></rect><path d="M5.6 7V5a2.4 2.4 0 014.8 0v2"></path></svg> read only</span>
       </div>
       <div class="workout-phase">
         <span class="workout-phase-chip" id="workout-phase-chip"></span>
@@ -219,7 +219,7 @@
     <div class="subscreen-head">
       <button type="button" class="rd-icon-btn" id="history-back" aria-label="Back to settings">‹</button>
       <h1 class="rd-title">History</h1>
-      <span class="badge badge-readonly">🔒 read only</span>
+      <span class="badge badge-readonly"><svg class="badge-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"></rect><path d="M5.6 7V5a2.4 2.4 0 014.8 0v2"></path></svg> read only</span>
     </div>
     <div class="history-tools">
       <label class="history-jump">
@@ -286,7 +286,7 @@
           <div class="settings-row settings-account">
             <span class="settings-account-l">
               <span id="account-current-user">Signed in</span>
-              <span class="badge badge-synced" id="sync-badge">⟳ synced</span>
+              <span class="badge badge-synced" id="sync-badge"><svg class="badge-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.7 4.6A5 5 0 003.4 6.2M3 3.6v2.8h2.8M3.3 11.4a5 5 0 009.3-1.6M13 12.4V9.6h-2.8"></path></svg> synced</span>
             </span>
             <button type="button" class="rd-link" id="logout-btn">Log out</button>
           </div>

@@ -1506,6 +1506,8 @@ textarea.rd-field {
 .badge-readonly { background: var(--raised); border: 1.5px solid var(--line); color: var(--text-secondary); }
 .badge-offline { background: var(--well); border: 1.5px solid var(--text-tertiary); color: var(--text-secondary); }
 .badge-synced { background: var(--raised); border: 1.5px solid var(--text-primary); color: var(--text-primary); }
+.badge { gap: 4px; }
+.badge-ic { width: 11px; height: 11px; flex: none; }
 
 .rd-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 6px 0; }
 .rd-skeleton-bar { height: 11px; border-radius: 6px; background: var(--well); }

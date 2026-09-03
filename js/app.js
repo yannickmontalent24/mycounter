@@ -40,19 +40,35 @@ function fmt(n) {
   return Math.round(n).toLocaleString('en-US');
 }
 
-// Provenance / kind badge for a resolved log entry — glyph + label so it reads without colour.
+// A consistent 1.8px-stroke icon set for the badges — replaces the placeholder Unicode glyphs
+// from the handoff. currentColor so each badge's own colour flows through.
+const BADGE_ICON_PATHS = {
+  label: '<rect x="2.5" y="4" width="11" height="8" rx="1.5"/><path d="M2.5 8h11"/>',
+  reference: '<path d="M3.5 3h6a2 2 0 012 2v8h-6a2 2 0 01-2-2z"/><path d="M6 6h4M6 9h3"/>',
+  estimate: '<circle cx="8" cy="8" r="5" stroke-dasharray="2.2 2"/>',
+  draft: '<path d="M4.5 3h7M4.5 13h7M5.5 3c0 3 2 4 2.5 5 .5-1 2.5-2 2.5-5M5.5 13c0-3 2-4 2.5-5 .5 1 2.5 2 2.5 5"/>',
+  recipe: '<path d="M2.8 7h10.4a5.2 5.2 0 01-10.4 0z"/><path d="M6 4.3c0-1 .6-1.6 1-2.1M9 4.3c0-1 .6-1.6 1-2.1"/>',
+  readonly: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.6 7V5a2.4 2.4 0 014.8 0v2"/>',
+  synced: '<path d="M12.7 4.6A5 5 0 003.4 6.2M3 3.6v2.8h2.8M3.3 11.4a5 5 0 009.3-1.6M13 12.4V9.6h-2.8"/>',
+  offline: '<path d="M4.7 11.5a3 3 0 01-.4-6 4.3 4.3 0 018.1.6"/><path d="M2 2.5l12 11.5"/>',
+};
+function badgeIcon(name) {
+  return `<svg class="badge-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BADGE_ICON_PATHS[name] || ''}</svg>`;
+}
+
+// Provenance / kind badge for a resolved log entry.
 function entryBadge(e) {
-  if (e.isRecipe) return '<span class="badge badge-recipe">▤ recipe</span>';
+  if (e.isRecipe) return `<span class="badge badge-recipe">${badgeIcon('recipe')} recipe</span>`;
   return sourceBadge(e.source);
 }
 function sourceBadge(source) {
   const map = {
-    label: ['badge-label', '▣ label'],
-    reference: ['badge-reference', '◨ reference'],
-    estimate: ['badge-estimate', '◌ estimate'],
+    label: ['badge-label', 'label'],
+    reference: ['badge-reference', 'reference'],
+    estimate: ['badge-estimate', 'estimate'],
   };
-  const [cls, text] = map[source] || map.estimate;
-  return `<span class="badge ${cls}">${text}</span>`;
+  const [cls, name] = map[source] || map.estimate;
+  return `<span class="badge ${cls}">${badgeIcon(name)} ${name}</span>`;
 }
 
 function todayISO() {
@@ -1564,7 +1580,7 @@ function renderRecipes() {
                 ? `${(r.ingredients || []).length} ingredients · cooked weight not entered`
                 : `cooked ${fmt(r.cookedWeightG)} g · ${r.portions} portions of ${portionG} g`}</div>
             </div>
-            <span class="badge ${draft ? 'badge-draft' : 'badge-recipe'}">${draft ? '⌛ draft' : '▤ recipe'}</span>
+            <span class="badge ${draft ? 'badge-draft' : 'badge-recipe'}">${draft ? badgeIcon('draft') + ' draft' : badgeIcon('recipe') + ' recipe'}</span>
           </div>
           ${draft
             ? '<div class="lib-card-note">Weigh the batch to unlock per-portion macros. Logging is locked until then.</div>'
@@ -1574,7 +1590,7 @@ function renderRecipes() {
                </div>`}
         </div>
         <div class="lib-card-actions">
-          <button type="button" class="rd-btn-primary" data-log-recipe="${r.id}" ${draft ? 'disabled' : ''}>${draft ? '🔒 Log a portion' : 'Log a portion'}</button>
+          <button type="button" class="rd-btn-primary" data-log-recipe="${r.id}" ${draft ? 'disabled' : ''}>Log a portion</button>
           ${draft
             ? `<button type="button" class="rd-btn-secondary" data-edit-recipe="${r.id}">Add weight</button>`
             : `<button type="button" class="rd-btn-secondary" data-cook-again="${r.id}">Cook again</button>
@@ -2777,7 +2793,7 @@ function renderSyncStatus() {
     const badge = document.getElementById(id);
     if (!badge) continue;
     badge.className = `badge ${online ? 'badge-synced' : 'badge-offline'}`;
-    badge.textContent = online ? '⟳ synced' : '⊘ offline';
+    badge.innerHTML = `${badgeIcon(online ? 'synced' : 'offline')} ${online ? 'synced' : 'offline'}`;
   }
 }
 window.addEventListener('online', renderSyncStatus);
