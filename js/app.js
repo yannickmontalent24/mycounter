@@ -1,7 +1,7 @@
 import * as db from './db.js';
 import { seedSharedIfEmpty, seedUserIfEmpty } from './seed.js';
 import {
-  resolveTarget, weekdayOf, heroState, ringDash, entryMacros,
+  resolveTarget, weekdayOf, ringDash, entryMacros,
   foodPortionMacros, recipePerGram, recipePortionMacros, validateFood, validateRecipe, formatDateHeader,
   isDraftRecipe, findSimilarFoods, unitOf,
   MEALS, MEAL_LABELS, inferMeal, groupEntriesByMeal, sumMacros, resolveEntriesForDisplay,
