@@ -317,7 +317,10 @@ function bundleToLogEntries(bundle, meal, date = todayISO()) {
 
 async function logBundle(bundle, meal) {
   await db.putAll('logEntries', bundleToLogEntries(bundle, meal));
-  await refreshCache();
+  // Logging touches only logEntries — nothing the essential cache holds. The one thing that
+  // does drift is the quick-log frequency map, so refresh that in the background rather than
+  // making the sheet sit there through a full re-fetch of foods/recipes/bundles/targets.
+  refreshBackgroundCache().then(renderRoute).catch(() => {});
 }
 
 function sheetPicked() {
@@ -525,9 +528,10 @@ async function confirmSheetLog() {
     meal: sheetState.meal,
     loggedAt: new Date().toISOString(),
   });
-  await refreshCache();
   closeModal();
   renderToday({ scrollToMeal: sheetState.meal });
+  // Only the quick-log frequency map can be stale now; refresh it without blocking the sheet.
+  refreshBackgroundCache().catch(() => {});
 }
 
 function openMealPicker(entry) {
