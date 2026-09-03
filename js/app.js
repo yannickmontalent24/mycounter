@@ -1465,101 +1465,102 @@ document.getElementById('copy-library-btn').addEventListener('click', async () =
   toast(ok ? 'Copied your food list' : 'Could not copy — check clipboard permission');
 });
 
-document.getElementById('paste-import-btn').addEventListener('click', () => {
-  const body = `
-    <h2>Paste from Claude</h2>
-    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">Paste the JSON block Claude gave you.</p>
-    <button type="button" class="secondary-btn" id="import-clipboard" style="margin-bottom:10px;">Paste from clipboard</button>
-    <textarea id="import-text" placeholder="[ { &quot;id&quot;: ... } ]"></textarea>
-    <div class="form-msg error" id="import-msg" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="import-cancel">Cancel</button>
-      <button type="button" class="primary-btn" id="import-review">Review</button>
-    </div>
-  `;
-  openModal(body);
-  document.getElementById('import-cancel').addEventListener('click', closeModal);
+document.getElementById('paste-import-btn').addEventListener('click', openPasteImportSheet);
 
-  document.getElementById('import-clipboard').addEventListener('click', async () => {
-    const msgEl = document.getElementById('import-msg');
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text || !text.trim()) {
-        msgEl.textContent = 'Your clipboard looks empty.';
-        msgEl.hidden = false;
-        return;
-      }
-      document.getElementById('import-text').value = text;
-      msgEl.hidden = true;
-      reviewImport();
-    } catch {
-      // Safari can refuse without a fresh user gesture, or the permission can be denied.
-      msgEl.textContent = 'Couldn’t read the clipboard — paste into the box below instead.';
-      msgEl.hidden = false;
-    }
-  });
-
-  document.getElementById('import-review').addEventListener('click', reviewImport);
-});
-
-async function reviewImport() {
-  const text = document.getElementById('import-text').value;
-  const msgEl = document.getElementById('import-msg');
-  try {
-    const plan = await prepareImport(text);
-    openImportPreview(plan);
-  } catch (err) {
-    msgEl.textContent = err instanceof ImportError ? err.message : 'Import failed.';
-    msgEl.hidden = false;
-  }
-}
-
-// A collision is no longer fatal to the whole paste — each clashing item becomes a choice.
-function openImportPreview(plan) {
-  const summary = plan.conflictCount === 0
-    ? `${plan.newCount} new item${plan.newCount === 1 ? '' : 's'} to add.`
-    : `${plan.newCount} new, ${plan.conflictCount} already in your library.`;
-
-  const rowsHtml = plan.items.map((it, i) => {
-    const macros = it.kind === 'food'
-      ? `${it.obj.per100g.kcal} kcal · ${it.obj.per100g.protein} g /100${unitOf(it.obj)}`
-      : `${it.obj.ingredients.length} ingredient${it.obj.ingredients.length === 1 ? '' : 's'} · ${it.obj.portions} portions`;
-    const control = it.conflict
-      ? `<select class="text-input" data-import-action="${i}" style="width:auto; height:40px; padding:0 8px; font-size:0.8125rem;">
-           <option value="skip">Skip</option>
-           <option value="replace">Replace</option>
-         </select>`
-      : '<span class="badge badge-draft">new</span>';
-    return `
-      <div class="food-row">
-        <div class="main">
-          <div class="name">${escapeHtml(it.obj.name)}</div>
-          <div class="meta"><span class="per">${it.kind} · ${macros}</span></div>
-        </div>
-        ${control}
-      </div>
-    `;
-  }).join('');
+// Paste and review in one sheet: the review list rebuilds as the box changes. A collision is
+// never fatal — each clashing item gets a Replace toggle; everything else is a check.
+function openPasteImportSheet() {
+  let items = [];
+  const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>';
+  const WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5v5.5M12 16v.5"></path></svg>';
 
   openModal(`
-    <h2>Review import</h2>
-    <p style="font-size:0.8125rem; color:var(--text-secondary); margin-top:0;">${summary}</p>
-    <div class="food-card" style="margin-top:6px;">${rowsHtml}</div>
-    <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="ip-cancel">Cancel</button>
-      <button type="button" class="primary-btn" id="ip-confirm">Import</button>
+    <div class="sheet">
+      <div class="sheet-title-row">
+        <h2>Paste from Claude</h2>
+        <button type="button" class="sheet-cancel" id="pi-cancel">Cancel</button>
+      </div>
+      <textarea class="rd-field" id="pi-text" style="min-height:96px;" placeholder="Paste the JSON block Claude gave you"></textarea>
+      <button type="button" class="sheet-more" id="pi-clip">Paste from clipboard</button>
+      <div id="pi-review"></div>
+      <button type="button" class="sheet-primary" id="pi-import" disabled>Import</button>
     </div>
   `);
 
-  document.querySelectorAll('[data-import-action]').forEach(sel => {
-    sel.addEventListener('change', () => {
-      plan.items[Number(sel.dataset.importAction)].action = sel.value;
-    });
+  const reviewEl = document.getElementById('pi-review');
+  const importBtn = document.getElementById('pi-import');
+
+  const perText = it => it.kind === 'food'
+    ? `${it.obj.per100g.kcal} kcal · ${it.obj.per100g.protein} g / 100 ${unitOf(it.obj)}`
+    : `${it.obj.ingredients.length} ingredient${it.obj.ingredients.length === 1 ? '' : 's'} · ${it.obj.portions} portions`;
+
+  const refreshCount = () => {
+    const n = items.filter(it => it.action !== 'skip').length;
+    importBtn.textContent = n ? `Import ${n} item${n === 1 ? '' : 's'}` : 'Import';
+    importBtn.disabled = n === 0;
+  };
+
+  const renderReview = () => {
+    if (!items.length) { reviewEl.innerHTML = ''; refreshCount(); return; }
+    reviewEl.innerHTML = `
+      <div class="sheet-field">
+        <div class="sheet-title-row">
+          <span class="eyebrow">Ready to import</span>
+          <button type="button" class="sheet-cancel" id="pi-deselect">Deselect all</button>
+        </div>
+        <div class="sheet-card">
+          ${items.map((it, i) => it.conflict ? `
+            <div class="sheet-review-row conflict">
+              <span style="color:var(--accent); width:20px; height:20px; flex:none;">${WARN}</span>
+              <span class="rv-main"><span class="rv-name">${escapeHtml(it.obj.name)}</span><span class="rv-clash">Already in your library</span></span>
+              <button type="button" class="rv-act" data-toggle="${i}">${it.action === 'replace' ? 'Replacing' : 'Replace'}</button>
+            </div>` : `
+            <div class="sheet-review-row">
+              <span data-toggle="${i}" style="width:20px; height:20px; flex:none; color:${it.action === 'skip' ? 'var(--text-tertiary)' : 'var(--accent)'}; cursor:pointer;">${it.action === 'skip' ? '' : CHECK}</span>
+              <span class="rv-main"><span class="rv-name">${escapeHtml(it.obj.name)}</span><span class="rv-per">${perText(it)}</span></span>
+              ${it.kind === 'recipe' ? '<span class="badge badge-recipe">' + badgeIcon('recipe') + ' recipe</span>' : sourceBadge(it.obj.source)}
+            </div>`).join('')}
+        </div>
+      </div>`;
+    reviewEl.querySelectorAll('[data-toggle]').forEach(elm => elm.addEventListener('click', () => {
+      const it = items[Number(elm.dataset.toggle)];
+      it.action = it.conflict
+        ? (it.action === 'replace' ? 'skip' : 'replace')
+        : (it.action === 'skip' ? 'add' : 'skip');
+      renderReview();
+    }));
+    const de = document.getElementById('pi-deselect');
+    if (de) de.addEventListener('click', () => { items.forEach(it => { it.action = 'skip'; }); renderReview(); });
+    refreshCount();
+  };
+
+  let timer = null;
+  const parse = async () => {
+    const text = document.getElementById('pi-text').value.trim();
+    if (!text) { items = []; renderReview(); return; }
+    try {
+      const plan = await prepareImport(text);
+      items = plan.items; // each: { kind, obj, conflict, action }
+    } catch (err) {
+      items = [];
+      reviewEl.innerHTML = `<div class="sheet-help" style="color:var(--accent);">${escapeHtml(err instanceof ImportError ? err.message : 'Could not read that paste.')}</div>`;
+      refreshCount();
+      return;
+    }
+    renderReview();
+  };
+  document.getElementById('pi-text').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(parse, 250); });
+
+  document.getElementById('pi-clip').addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) { document.getElementById('pi-text').value = text; parse(); }
+    } catch { /* Safari can refuse without a fresh gesture — the box still works */ }
   });
 
-  document.getElementById('ip-cancel').addEventListener('click', closeModal);
-  document.getElementById('ip-confirm').addEventListener('click', async () => {
-    const result = await commitImport(plan.items);
+  document.getElementById('pi-cancel').addEventListener('click', closeModal);
+  importBtn.addEventListener('click', async () => {
+    const result = await commitImport(items);
     await refreshCache();
     closeModal();
     const parts = [];
@@ -1695,12 +1696,15 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
   function ingredientRowHtml(ing, i) {
     const options = cache.foods.map(f => `<option value="${f.id}" ${ing.foodId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
     const chosen = ing.foodId ? cache.foods.find(f => f.id === ing.foodId) : null;
-    const placeholder = chosen && unitOf(chosen) === 'ml' ? 'ml (raw)' : 'grams (raw)';
+    const unit = chosen && unitOf(chosen) === 'ml' ? 'ml' : 'g';
     return `
-      <div style="display:flex; gap:8px; margin-bottom:8px;" data-ing-row="${i}">
-        <select class="text-input" data-ing-food style="flex:2;"><option value="">Select food…</option>${options}</select>
-        <input class="text-input" data-ing-grams type="number" placeholder="${placeholder}" aria-label="Amount of ingredient ${i + 1}" style="flex:1;" value="${ing.grams || ''}">
-        <button type="button" class="icon-btn-small" data-remove-ing aria-label="Remove ingredient">×</button>
+      <div class="sheet-ing-row" data-ing-row="${i}">
+        <select class="sheet-well" data-ing-food style="flex:1; min-width:0; height:44px; font-size:14px; font-weight:600;"><option value="">Select food…</option>${options}</select>
+        <label class="sheet-well" style="width:92px; height:44px; padding:0 10px; display:flex; align-items:center; gap:5px;">
+          <input data-ing-grams type="text" inputmode="numeric" aria-label="Raw amount of ingredient ${i + 1}" value="${ing.grams || ''}" style="flex:1; min-width:0; border:none; background:none; outline:none; text-align:right; font-family:var(--font-figure); font-variant-numeric:tabular-nums; font-size:14px; font-weight:700; color:var(--text-primary);">
+          <span style="font-size:12px; color:var(--text-secondary);">${unit}</span>
+        </label>
+        <button type="button" class="x" data-remove-ing aria-label="Remove ingredient">×</button>
       </div>
     `;
   }
@@ -1713,17 +1717,11 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       : (isEdit ? recipe.name : ''));
 
   const editWarning = isEdit && loggedCount > 0
-    ? `<div class="form-msg" style="color:var(--amber); margin:0 0 12px;">
-         This recipe has ${loggedCount} portion${loggedCount === 1 ? '' : 's'} already logged. Changing
-         the weights here also changes what those past meals say you ate. For a new batch, close this
-         and use “Cook this again” instead.
-       </div>`
+    ? `<div class="sheet-notice">${loggedCount} portion${loggedCount === 1 ? '' : 's'} already logged from this recipe. Changing the weights also changes what those past meals say you ate — for a new batch, use "Cook again" instead.</div>`
     : '';
 
   const copyNote = copyFrom
-    ? `<div class="form-msg" style="color:var(--text-secondary); margin:0 0 12px;">
-         Copied from “${escapeHtml(copyFrom.name)}”. Adjust the weights for this batch — past meals stay untouched.
-       </div>`
+    ? `<div class="sheet-help">Copied from "${escapeHtml(copyFrom.name)}". Adjust the weights for this batch — past meals stay untouched.</div>`
     : '';
 
   // A saved, actually-weighed cooked weight is never silently overwritten by the estimate —
@@ -1742,54 +1740,103 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
     if (est != null) initialCooked = est;
   }
 
-  const body = `
-    <h2>${titleText}</h2>
-    ${editWarning}${copyNote}
-    <label class="field-label" for="r-name">Name</label>
-    <input class="text-input" id="r-name" style="margin-bottom:12px;" value="${escapeHtml(defaultName)}">
-    <div class="field-label" style="margin-bottom:8px;">Raw ingredients</div>
-    <div id="r-ingredients">${ingredients.map(ingredientRowHtml).join('')}</div>
-    <div style="display:flex; gap:8px; margin-bottom:14px;">
-      <button type="button" class="secondary-btn" id="r-add-ing" style="text-align:center;">Add ingredient</button>
-      <button type="button" class="secondary-btn" id="r-new-food" style="text-align:center;">New food</button>
+  const initialPortions = restore ? restore.portions : (template ? template.portions : 5);
+
+  openModal(`
+    <div class="sheet sheet--dense">
+      <div class="sheet-title-row">
+        <h2>${titleText}</h2>
+        <button type="button" class="sheet-cancel" id="r-cancel">Cancel</button>
+      </div>
+      ${editWarning}${copyNote}
+
+      <input class="sheet-well" id="r-name" placeholder="Recipe name" value="${escapeHtml(defaultName)}">
+
+      <div class="sheet-field">
+        <span class="eyebrow">Ingredients — raw weights</span>
+        <div class="sheet-card">
+          <div id="r-ingredients">${ingredients.map(ingredientRowHtml).join('')}</div>
+          <button type="button" class="sheet-ing-add" id="r-add-ing"><span class="plus" aria-hidden="true">+</span><span>Add an ingredient</span></button>
+          <button type="button" class="sheet-ing-add" id="r-new-food"><span class="plus" aria-hidden="true">+</span><span>Create a new food first</span></button>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <div class="sheet-field" style="flex:1;">
+          <span class="eyebrow">Cooked weight</span>
+          <label class="sheet-well-unit"><input id="r-cooked" type="text" inputmode="numeric" aria-label="Cooked batch weight" placeholder="—" value="${escapeHtml(String(initialCooked))}"><span class="u">g</span></label>
+        </div>
+        <div class="sheet-field" style="width:140px;">
+          <span class="eyebrow">Portions</span>
+          <div class="sheet-stepper">
+            <button type="button" id="r-portions-minus" aria-label="Fewer portions">−</button>
+            <span class="val" id="r-portions-val">${Number(initialPortions) || 5}</span>
+            <button type="button" id="r-portions-plus" aria-label="More portions">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="r-state"></div>
+
+      <div class="form-msg error" id="r-error" hidden></div>
+      <button type="button" class="sheet-primary" id="r-save">Save recipe</button>
     </div>
-    <label class="field-label" for="r-cooked">Cooked / finished batch weight (g)</label>
-    <input class="text-input" id="r-cooked" type="number" inputmode="numeric" style="margin-bottom:6px;" value="${escapeHtml(String(initialCooked))}">
-    <div id="r-cooked-hint" style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:12px;"></div>
-    <label class="field-label" for="r-portions">Portions</label>
-    <input class="text-input" id="r-portions" type="number" inputmode="numeric" style="margin-bottom:12px;" value="${restore ? escapeHtml(restore.portions) : (template ? template.portions : '')}">
-    <div class="form-msg error" id="r-error" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="secondary-btn" id="r-cancel">Cancel</button>
-      <button type="button" class="primary-btn" id="r-save">Save</button>
-    </div>
-  `;
-  openModal(body);
+  `);
+  let portions = Number(initialPortions) || 5;
 
   let rows = ingredients.slice();
 
-  function updateCookedHint() {
-    const val = document.getElementById('r-cooked').value.trim();
-    document.getElementById('r-cooked-hint').textContent = (val !== '' && !cookedManuallyEdited)
-      ? 'Estimated from the ingredients — edit once you’ve weighed the real batch.'
-      : 'Leave empty to save as a draft while the batch is still cooking. You can’t log portions until it’s filled in.';
+  // While cooked weight is empty this saves as a draft (no per-portion macros, can't be logged);
+  // once a weight is in, the notice is replaced by the live per-portion figures.
+  function updateState() {
+    const cookedRaw = document.getElementById('r-cooked').value.trim();
+    const stateEl = document.getElementById('r-state');
+    const saveBtn = document.getElementById('r-save');
+    if (cookedRaw === '') {
+      saveBtn.textContent = 'Save as draft';
+      stateEl.innerHTML = `<div class="sheet-notice">${badgeIcon('draft')}<span>Saves as a draft. Weigh the cooked batch to unlock per-portion macros and logging.</span></div>`;
+      return;
+    }
+    saveBtn.textContent = 'Save recipe';
+    const provisional = {
+      ingredients: rows.filter(r => r.foodId && r.grams).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
+      cookedWeightG: Number(cookedRaw),
+      portions: portions,
+    };
+    let strip = '';
+    try {
+      const pg = recipePerGram(provisional, foodsById());
+      const g = provisional.cookedWeightG / provisional.portions;
+      strip = `<div class="sheet-fig-strip">
+        <div><div>${Math.round(pg.kcal * g)}</div><div>kcal / portion</div></div>
+        <div><div>${Math.round(pg.protein * g)} g</div><div>protein</div></div>
+      </div>`;
+    } catch { strip = '<div class="sheet-help">Add ingredient weights to see per-portion macros.</div>'; }
+    stateEl.innerHTML = strip;
   }
-  updateCookedHint();
 
   function maybeAutoEstimateCooked() {
-    if (cookedManuallyEdited) return;
-    const estimate = estimateCookedWeightG(
-      rows.filter(r => r.foodId && r.grams).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
-      foodsById(),
-    );
-    if (estimate != null) document.getElementById('r-cooked').value = estimate;
-    updateCookedHint();
+    if (!cookedManuallyEdited) {
+      const estimate = estimateCookedWeightG(
+        rows.filter(r => r.foodId && r.grams).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
+        foodsById(),
+      );
+      if (estimate != null) document.getElementById('r-cooked').value = estimate;
+    }
+    updateState();
   }
 
   document.getElementById('r-cooked').addEventListener('input', () => {
     cookedManuallyEdited = true;
-    updateCookedHint();
+    updateState();
   });
+
+  const portionsVal = document.getElementById('r-portions-val');
+  const stepPortions = d => { portions = Math.max(1, portions + d); portionsVal.textContent = portions; updateState(); };
+  document.getElementById('r-portions-minus').addEventListener('click', () => stepPortions(-1));
+  document.getElementById('r-portions-plus').addEventListener('click', () => stepPortions(1));
+
+  updateState();
 
   function rerenderIngredients() {
     document.getElementById('r-ingredients').innerHTML = rows.map(ingredientRowHtml).join('');
@@ -1827,7 +1874,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       name: document.getElementById('r-name').value,
       cooked: document.getElementById('r-cooked').value,
       cookedManuallyEdited,
-      portions: document.getElementById('r-portions').value,
+      portions: portions,
       rows: rows.map(r => ({ ...r })),
     };
     openFoodModal(null, {
@@ -1850,7 +1897,7 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
       ingredients: rows.filter(r => r.foodId).map(r => ({ foodId: r.foodId, grams: Number(r.grams) })),
       cookedWeightG: cookedRaw === '' ? null : Number(cookedRaw),
       cookedWeightEstimated: cookedRaw !== '' && !cookedManuallyEdited,
-      portions: Number(document.getElementById('r-portions').value),
+      portions: portions,
     };
     const errors = validateRecipe(obj, { allowDraft: true });
     const errEl = document.getElementById('r-error');
