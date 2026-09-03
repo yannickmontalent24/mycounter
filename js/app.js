@@ -2026,7 +2026,7 @@ function openBundleModal(bundle, { restore = null } = {}) {
 // ==================== WORKOUTS ====================
 // Week and session default to where the calendar actually is, so opening this at the gym
 // shows today's numbers without touching anything. Both stay overridable.
-const workoutState = { weekOverride: null, dayOverride: null };
+const workoutState = { weekOverride: null, dayOverride: null, expanded: 0 };
 
 function renderWorkouts() {
   const today = todayISO();
@@ -2039,66 +2039,73 @@ function renderWorkouts() {
   const day = phase.days[dayIndex];
 
   document.getElementById('workout-phase-chip').textContent = phase.name;
+  document.getElementById('workout-phase-note').textContent = `${phase.weeks}-week phase`;
 
   const weekChips = document.getElementById('workout-week-chips');
   weekChips.innerHTML = '';
   for (let w = 1; w <= phase.weeks; w++) {
     const isNow = w === currentWeek;
-    const chip = el(`<button type="button" class="tag-chip">Week ${w}${isNow ? ' · now' : ''}</button>`);
     const active = w === week;
-    chip.style.background = active ? 'var(--navy)' : 'var(--surface-raised)';
-    chip.style.color = active ? 'var(--surface)' : 'var(--navy)';
-    chip.style.borderColor = 'var(--navy)';
-    chip.addEventListener('click', () => { workoutState.weekOverride = w; renderWorkouts(); });
+    const chip = el(`<button type="button" class="week-chip${isNow ? ' is-now' : ''}${active ? ' active' : ''}" aria-label="Week ${w}${isNow ? ', current' : ''}">${w}${isNow ? '<span class="now">NOW</span>' : ''}</button>`);
+    chip.addEventListener('click', () => { workoutState.weekOverride = w; workoutState.expanded = 0; renderWorkouts(); });
     weekChips.appendChild(chip);
   }
 
   const dayChips = document.getElementById('workout-day-chips');
   dayChips.innerHTML = '';
   phase.days.forEach((d, i) => {
-    const chip = el(`<button type="button" class="tag-chip">${escapeHtml(d.dayLabel)} — ${escapeHtml(d.label)}</button>`);
-    const active = i === dayIndex;
-    chip.style.background = active ? 'var(--teal)' : 'var(--surface-raised)';
-    chip.style.color = active ? 'var(--surface)' : 'var(--teal)';
-    chip.style.borderColor = 'var(--teal)';
-    chip.addEventListener('click', () => { workoutState.dayOverride = i; renderWorkouts(); });
+    const chip = el(`<button type="button" class="rd-chip${i === dayIndex ? ' active' : ''}">${escapeHtml(d.dayLabel)} — ${escapeHtml(d.label)}</button>`);
+    chip.addEventListener('click', () => { workoutState.dayOverride = i; workoutState.expanded = 0; renderWorkouts(); });
     dayChips.appendChild(chip);
   });
 
   const list = document.getElementById('workout-exercises');
   list.innerHTML = '';
-  list.appendChild(el(`
-    <div class="section-header-row">
-      <div class="section-label">${escapeHtml(day.dayLabel)} · ${escapeHtml(day.label)}</div>
-      <div class="totals">${day.exercises.length} exercises</div>
-    </div>
-  `));
 
   day.exercises.forEach((ex, i) => {
+    const idx = String(i + 1).padStart(2, '0');
+    const sets = String(ex.weeks[week] ?? '—');
+    if (i !== workoutState.expanded) {
+      const row = el(`
+        <button type="button" class="ex-row">
+          <span class="idx">${idx}</span>
+          <span class="main"><span class="name">${escapeHtml(ex.name)}</span><span class="cue">${escapeHtml(ex.instructions)}</span></span>
+          <span class="sets">${escapeHtml(sets)}</span>
+        </button>
+      `);
+      row.style.overflow = 'hidden';
+      row.querySelector('.cue').style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      row.addEventListener('click', () => { workoutState.expanded = i; renderWorkouts(); });
+      list.appendChild(row);
+      return;
+    }
+
     const otherWeeks = Object.keys(ex.weeks)
       .map(Number)
       .filter(w => w !== week && w <= phase.weeks)
-      .map(w => `<span class="other-week">W${w} ${escapeHtml(String(ex.weeks[w]))}</span>`)
+      .map(w => `<span class="ex-week">W${w} ${escapeHtml(String(ex.weeks[w]))}</span>`)
       .join('');
-    const imageHtml = ex.image
-      ? `<img class="exercise-image" src="${escapeHtml(ex.image)}" alt="" loading="lazy">`
-      : '';
-    list.appendChild(el(`
-      <article class="exercise-card">
-        <div class="exercise-head">
-          <span class="exercise-index">${i + 1}</span>
-          <h3 class="exercise-name">${escapeHtml(ex.name)}</h3>
+    const media = ex.image
+      ? `<img class="ex-card-img" src="${escapeHtml(ex.image)}" alt="" loading="lazy">`
+      : '<div class="ex-card-img-ph">DEMO — MACHINE SETUP</div>';
+
+    const card = el(`
+      <div class="ex-card">
+        <div class="ex-card-head">
+          <span class="l"><span class="idx">${idx}</span><span class="name">${escapeHtml(ex.name)}</span></span>
         </div>
-        ${imageHtml}
-        <div class="exercise-sets">
-          <span class="sets-label">Week ${week}</span>
-          <span class="sets-value">${escapeHtml(String(ex.weeks[week] ?? '—'))}</span>
+        <div class="ex-card-body">
+          <div class="ex-card-sets">${escapeHtml(sets)}</div>
+          ${media}
+          <p class="ex-card-cue" style="margin:0;">${escapeHtml(ex.instructions)}</p>
+          ${otherWeeks ? `<div class="ex-card-weeks">${otherWeeks}</div>` : ''}
+          ${ex.link ? `<a class="rd-link" href="${escapeHtml(ex.link)}" target="_blank" rel="noopener noreferrer">How to do it — video guide ↗</a>` : ''}
         </div>
-        <p class="exercise-instructions">${escapeHtml(ex.instructions)}</p>
-        <div class="exercise-other-weeks">${otherWeeks}</div>
-        ${ex.link ? `<a class="exercise-link" href="${escapeHtml(ex.link)}" target="_blank" rel="noopener noreferrer">How to do it — video guide ↗</a>` : ''}
-      </article>
-    `));
+      </div>
+    `);
+    card.querySelector('.ex-card-head').addEventListener('click', () => { workoutState.expanded = -1; renderWorkouts(); });
+    card.querySelector('.ex-card-head').style.cursor = 'pointer';
+    list.appendChild(card);
   });
 }
 
