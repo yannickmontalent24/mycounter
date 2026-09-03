@@ -1132,23 +1132,15 @@ function directlyLoggedFoodIds() {
 }
 
 function renderFoodRow(f) {
-  const badgeBg = f.source === 'estimate' ? 'var(--red-tint-bg)' : (f.source === 'reference' ? 'var(--teal-badge-bg)' : 'var(--navy-tint-bg)');
-  const badgeColor = f.source === 'estimate' ? 'var(--red)' : (f.source === 'reference' ? 'var(--teal)' : 'var(--navy)');
-  const badgeBorder = f.source === 'estimate' ? 'var(--red-tint-border)' : (f.source === 'reference' ? 'var(--teal-tint-border)' : 'var(--navy-tint-border)');
+  const per = `${f.per100g.kcal} kcal · ${f.per100g.protein} g / 100 ${unitOf(f)}`;
   const row = el(`
     <div class="food-row">
       <div class="main">
         <div class="name">${escapeHtml(f.name)}</div>
-        <div class="per100">${f.per100g.kcal} kcal · ${f.per100g.protein} g /100${unitOf(f)}</div>
+        <div class="meta"><span class="per">${per}</span>${sourceBadge(f.source)}</div>
       </div>
-      <div class="source-badge" style="border:1px solid ${badgeBorder}; background:${badgeBg};">
-        <span class="glyph" style="color:${badgeColor};">${SOURCE_GLYPH[f.source] ?? '?'}</span>
-        <span class="word" style="color:${badgeColor};">${escapeHtml(f.source)}</span>
-      </div>
-      <div class="actions">
-        <button type="button" class="icon-btn-small" aria-label="Edit ${escapeHtml(f.name)}">✎</button>
-        <button type="button" class="icon-btn-small" aria-label="Delete ${escapeHtml(f.name)}">×</button>
-      </div>
+      <button type="button" class="food-row-act" aria-label="Edit ${escapeHtml(f.name)}">✎</button>
+      <button type="button" class="food-row-act is-delete" aria-label="Delete ${escapeHtml(f.name)}">×</button>
     </div>
   `);
   row.querySelector('[aria-label^="Edit"]').addEventListener('click', () => openFoodModal(f));
@@ -1171,12 +1163,16 @@ function renderFoodRows(list, rows, emptyMsg) {
 let libraryMode = 'foods';
 
 function renderLibrary() {
-  document.querySelectorAll('#library-mode-chips .tag-chip').forEach(b => b.classList.toggle('active', b.dataset.mode === libraryMode));
+  document.querySelectorAll('#library-mode-chips .rd-chip').forEach(b => b.classList.toggle('active', b.dataset.mode === libraryMode));
   document.getElementById('library-foods-panel').hidden = libraryMode !== 'foods';
   document.getElementById('library-recipes-panel').hidden = libraryMode !== 'recipes';
   document.getElementById('library-bundles-panel').hidden = libraryMode !== 'bundles';
-  document.getElementById('library-add-btn').textContent = libraryMode === 'foods' ? '+ Add food'
-    : libraryMode === 'recipes' ? '+ Build a recipe' : '+ New bundle';
+  document.getElementById('library-foods-claude').hidden = libraryMode !== 'foods';
+
+  const online = navigator.onLine;
+  const badge = document.getElementById('library-sync-badge');
+  badge.className = `badge ${online ? 'badge-synced' : 'badge-offline'}`;
+  badge.textContent = online ? '⟳ synced' : '⊘ offline';
 
   if (libraryMode === 'foods') renderFoods();
   else if (libraryMode === 'recipes') renderRecipes();
@@ -1190,16 +1186,16 @@ document.getElementById('library-mode-chips').addEventListener('click', e => {
   renderLibrary();
 });
 
-document.getElementById('library-add-btn').addEventListener('click', () => {
-  if (libraryMode === 'foods') openFoodModal(null);
-  else if (libraryMode === 'recipes') openRecipeModal(null);
+document.querySelectorAll('.library-add-btn').forEach(btn => btn.addEventListener('click', () => {
+  if (btn.dataset.add === 'foods') openFoodModal(null);
+  else if (btn.dataset.add === 'recipes') openRecipeModal(null);
   else openBundleModal(null);
-});
+}));
 
 function renderFoods() {
   const filters = activeFoodFilters();
   const filterBtn = document.getElementById('foods-filter-btn');
-  filterBtn.textContent = filters.length ? `Filter & sort · ${filters.length}` : 'Filter & sort';
+  document.getElementById('foods-filter-label').textContent = filters.length ? `Sort · ${filters.length}` : 'Sort';
   filterBtn.classList.toggle('active', filters.length > 0);
 
   const summary = document.getElementById('foods-active-filters');
@@ -1229,12 +1225,14 @@ function renderFoods() {
 
   const listToggle = document.getElementById('foods-list-toggle');
   listToggle.hidden = !canCollapse;
-  listToggle.textContent = foodsListExpanded ? 'Show fewer ▴' : `Show all foods (${mainRows.length}) ▾`;
+  listToggle.innerHTML = foodsListExpanded
+    ? 'Show fewer <span aria-hidden="true">▴</span>'
+    : `Show all foods (${mainRows.length}) <span aria-hidden="true">▾</span>`;
 
   const toggleBtn = document.getElementById('foods-ingredients-toggle');
   const ingList = document.getElementById('foods-ingredients-list');
   toggleBtn.hidden = ingredientRows.length === 0;
-  toggleBtn.textContent = `Recipe ingredients (${ingredientRows.length}) ${foodsIngredientsExpanded ? '▴' : '▾'}`;
+  toggleBtn.innerHTML = `Recipe ingredients (${ingredientRows.length}) <span aria-hidden="true">${foodsIngredientsExpanded ? '▴' : '▾'}</span>`;
   ingList.hidden = !foodsIngredientsExpanded;
   if (foodsIngredientsExpanded) renderFoodRows(ingList, ingredientRows, 'No ingredient-only foods.');
 }
@@ -1526,50 +1524,70 @@ function openImportPreview(plan) {
 function renderRecipes() {
   const list = document.getElementById('recipes-list');
   list.innerHTML = '';
-  if (cache.recipes.length === 0) list.appendChild(el(`<div class="empty-state">No recipes yet.</div>`));
+  if (cache.recipes.length === 0) {
+    list.appendChild(el(`<div class="empty-state">No recipes yet. Build one from foods you already have.</div>`));
+    return;
+  }
   const fMap = foodsById();
   for (const r of cache.recipes) {
     const draft = isDraftRecipe(r);
-    let perPortionText = '—';
-    if (draft) {
-      perPortionText = 'Draft — needs the cooked batch weight';
-    } else {
-      try {
-        const perGram = recipePerGram(r, fMap);
-        const grams = r.cookedWeightG / r.portions;
-        // Per-100 g matters as much as per-portion now that any weighed amount can be logged.
-        perPortionText = `${Math.round(perGram.kcal * grams)} kcal · ${Math.round(perGram.protein * grams)} g / portion`
-          + ` · ${Math.round(perGram.kcal * 100)} kcal /100g`;
-      } catch {
-        perPortionText = 'Missing an ingredient food';
-      }
+    let perGram = null;
+    let broken = false;
+    if (!draft) {
+      try { perGram = recipePerGram(r, fMap); } catch { broken = true; }
     }
-    const row = el(`
-      <div>
-        <div class="food-row" style="align-items:flex-start;">
-          <div class="main">
-            <div class="name">${escapeHtml(r.name)}${draft ? ' <span class="draft-tag">draft</span>' : ''}${!draft && r.cookedWeightEstimated ? ' <span class="draft-tag">estimated</span>' : ''}</div>
-            <div class="per100">${escapeHtml(perPortionText)}</div>
-          </div>
-          <div class="actions">
-            <button type="button" class="icon-btn-small" data-edit-recipe="${r.id}" aria-label="Edit ${escapeHtml(r.name)}">✎</button>
-            <button type="button" class="icon-btn-small" data-delete-recipe="${r.id}" aria-label="Delete ${escapeHtml(r.name)}">×</button>
+
+    if (broken) {
+      const missing = (r.ingredients || []).map(i => i.foodId).filter(id => !fMap.has(id));
+      const card = el(`
+        <div class="lib-card is-broken">
+          <div class="lib-card-fix">
+            <div>
+              <div class="lib-card-title">${escapeHtml(r.name)}</div>
+              <div class="lib-card-warn">⚠ ingredient ${missing.length ? `"${escapeHtml(missing[0])}"` : ''} is missing</div>
+            </div>
+            <button type="button" class="rd-link" data-edit-recipe="${r.id}">Fix</button>
           </div>
         </div>
-        <div style="display:flex; gap:8px; margin:6px 0 6px;">
-          <button type="button" class="secondary-btn" data-log-recipe="${r.id}" ${draft ? 'disabled' : ''} style="text-align:center;${draft ? 'opacity:0.5;' : ''}">
-            ${draft ? 'Add cooked weight to log' : `Log 1 portion (${onePortionGrams(r)} g)`}
-          </button>
-          <button type="button" class="secondary-btn" data-weigh-recipe="${r.id}" ${draft ? 'disabled' : ''} style="text-align:center;${draft ? 'opacity:0.5;' : ''}">
-            Weigh a portion
-          </button>
+      `);
+      list.appendChild(card);
+      continue;
+    }
+
+    const portionG = draft ? null : onePortionGrams(r);
+    const portionKcal = perGram ? Math.round(perGram.kcal * (r.cookedWeightG / r.portions)) : null;
+    const portionProt = perGram ? Math.round(perGram.protein * (r.cookedWeightG / r.portions)) : null;
+
+    const card = el(`
+      <div class="lib-card">
+        <div class="lib-card-body">
+          <div class="lib-card-top">
+            <div>
+              <div class="lib-card-title">${escapeHtml(r.name)}</div>
+              <div class="lib-card-sub">${draft
+                ? `${(r.ingredients || []).length} ingredients · cooked weight not entered`
+                : `cooked ${fmt(r.cookedWeightG)} g · ${r.portions} portions of ${portionG} g`}</div>
+            </div>
+            <span class="badge ${draft ? 'badge-draft' : 'badge-recipe'}">${draft ? '⌛ draft' : '▤ recipe'}</span>
+          </div>
+          ${draft
+            ? '<div class="lib-card-note">Weigh the batch to unlock per-portion macros. Logging is locked until then.</div>'
+            : `<div class="lib-card-figs">
+                 <div><div>${fmt(portionKcal)}</div><div>kcal / portion</div></div>
+                 <div><div>${portionProt} g</div><div>protein</div></div>
+               </div>`}
         </div>
-        <div style="margin:0 0 14px;">
-          <button type="button" class="secondary-btn" data-cook-again="${r.id}" style="text-align:center;">Cook this again</button>
+        <div class="lib-card-actions">
+          <button type="button" class="rd-btn-primary" data-log-recipe="${r.id}" ${draft ? 'disabled' : ''}>${draft ? '🔒 Log a portion' : 'Log a portion'}</button>
+          ${draft
+            ? `<button type="button" class="rd-btn-secondary" data-edit-recipe="${r.id}">Add weight</button>`
+            : `<button type="button" class="rd-btn-secondary" data-cook-again="${r.id}">Cook again</button>
+               <button type="button" class="rd-icon-btn" data-edit-recipe="${r.id}" aria-label="Edit ${escapeHtml(r.name)}">✎</button>
+               <button type="button" class="rd-icon-btn is-danger" data-delete-recipe="${r.id}" aria-label="Delete ${escapeHtml(r.name)}">×</button>`}
         </div>
       </div>
     `);
-    list.appendChild(row);
+    list.appendChild(card);
   }
   list.querySelectorAll('[data-log-recipe]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1581,19 +1599,6 @@ function renderRecipes() {
         meal: inferMeal(), loggedAt: new Date().toISOString(),
       });
       goTo('today');
-    });
-  });
-  // Sends you to the amount screen with the recipe selected and one portion pre-filled, so you
-  // can dial in whatever you actually weighed out.
-  list.querySelectorAll('[data-weigh-recipe]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const recipe = recipesById().get(btn.dataset.weighRecipe);
-      if (!recipe || isDraftRecipe(recipe)) return;
-      logState.query = '';
-      logState.pickedId = recipe.id;
-      logState.pickedKind = 'recipe';
-      logState.grams = String(onePortionGrams(recipe));
-      goTo('log');
     });
   });
   list.querySelectorAll('[data-cook-again]').forEach(btn => {
@@ -1815,33 +1820,38 @@ function renderBundles() {
   list.innerHTML = '';
   if (cache.bundles.length === 0) {
     list.appendChild(el(`<div class="empty-state">No bundles yet. Group foods you always have together — like a usual breakfast — to log them all in one tap.</div>`));
+    return;
   }
   const fMap = foodsById(), rMap = recipesById();
+  const mealLabel = MEAL_LABELS[inferMeal()];
   for (const b of cache.bundles) {
     const macros = bundleMacros(b, fMap, rMap);
-    const itemsText = b.items.map(item => {
+    const itemRows = b.items.map(item => {
       const m = bundleItemMacros(item, fMap, rMap);
-      return m ? `${m.name} ${item.grams}${m.unit}` : 'missing item';
-    }).join(', ');
-    const row = el(`
-      <div>
-        <div class="food-row" style="align-items:flex-start;">
-          <div class="main">
-            <div class="name">${escapeHtml(b.name)}</div>
-            <div class="per100">${escapeHtml(itemsText)}</div>
-            <div class="per100">${macros.kcal} kcal · ${macros.protein} g</div>
+      const name = m ? `${escapeHtml(m.name)} · ${item.grams} ${m.unit}` : 'missing item';
+      return `<div><div>${name}</div><div class="k">${m ? m.kcal : '—'}</div></div>`;
+    }).join('');
+    const card = el(`
+      <div class="lib-card">
+        <div class="lib-card-body">
+          <div class="lib-card-top" style="align-items:baseline;">
+            <div class="lib-card-title">${escapeHtml(b.name)}</div>
+            <div class="lib-card-sub" style="margin:0;">${b.items.length} item${b.items.length === 1 ? '' : 's'}</div>
           </div>
-          <div class="actions">
-            <button type="button" class="icon-btn-small" data-edit-bundle="${b.id}" aria-label="Edit ${escapeHtml(b.name)}">✎</button>
-            <button type="button" class="icon-btn-small" data-delete-bundle="${b.id}" aria-label="Delete ${escapeHtml(b.name)}">×</button>
+          ${b.items.length <= 4 ? `<div class="lib-card-items">${itemRows}</div>` : ''}
+          <div class="lib-card-figs">
+            <div><div>${fmt(macros.kcal)}</div><div>kcal total</div></div>
+            <div><div>${macros.protein} g</div><div>protein</div></div>
           </div>
         </div>
-        <div style="margin:0 0 14px;">
-          <button type="button" class="secondary-btn" data-log-bundle="${b.id}" style="text-align:center;">Log now</button>
+        <div class="lib-card-actions">
+          <button type="button" class="rd-btn-primary" data-log-bundle="${b.id}">Log all to ${escapeHtml(mealLabel)}</button>
+          <button type="button" class="rd-icon-btn" data-edit-bundle="${b.id}" aria-label="Edit ${escapeHtml(b.name)}">✎</button>
+          <button type="button" class="rd-icon-btn is-danger" data-delete-bundle="${b.id}" aria-label="Delete ${escapeHtml(b.name)}">×</button>
         </div>
       </div>
     `);
-    list.appendChild(row);
+    list.appendChild(card);
   }
   list.querySelectorAll('[data-log-bundle]').forEach(btn => {
     btn.addEventListener('click', async () => {

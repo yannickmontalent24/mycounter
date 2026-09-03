@@ -139,44 +139,53 @@
     </div>
   </main>
 
-  <main id="screen-foods" class="screen" data-screen="foods" hidden>
-    <div class="screen-title-row">
-      <h1 class="screen-title">Library</h1>
-      <button type="button" class="pill-btn" id="library-add-btn">+ Add food</button>
-    </div>
-
-    <div class="tag-chips" id="library-mode-chips">
-      <button type="button" class="tag-chip active" data-mode="foods">Foods</button>
-      <button type="button" class="tag-chip" data-mode="recipes">Recipes</button>
-      <button type="button" class="tag-chip" data-mode="bundles">Bundles</button>
-    </div>
-
-    <div id="library-foods-panel">
-      <div class="foods-claude-actions">
-        <button type="button" class="link-btn" id="paste-import-btn">Paste from Claude</button>
-        <button type="button" class="link-btn" id="copy-library-btn">Copy list for Claude</button>
+  <main id="screen-foods" class="screen rd-screen" data-screen="foods" hidden>
+    <div class="library-head">
+      <div class="library-head-top">
+        <h1 class="rd-title">Library</h1>
+        <span class="badge badge-synced" id="library-sync-badge">⟳ synced</span>
       </div>
+      <div class="rd-chip-row" id="library-mode-chips">
+        <button type="button" class="rd-chip active" data-mode="foods">Foods</button>
+        <button type="button" class="rd-chip" data-mode="recipes">Recipes</button>
+        <button type="button" class="rd-chip" data-mode="bundles">Bundles</button>
+      </div>
+      <div class="library-claude" id="library-foods-claude">
+        <button type="button" class="rd-link" id="paste-import-btn">Paste from Claude</button>
+        <button type="button" class="rd-link" id="copy-library-btn">Copy list for Claude</button>
+      </div>
+    </div>
 
+    <div id="library-foods-panel" class="library-panel">
       <div class="foods-toolbar">
-        <input class="text-input" id="foods-search" type="text" placeholder="Search foods" autocomplete="off">
-        <button type="button" class="pill-btn" id="foods-filter-btn" aria-haspopup="dialog">Filter &amp; sort</button>
+        <div class="rd-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg>
+          <input id="foods-search" type="text" placeholder="Search foods…" autocomplete="off" aria-label="Search foods">
+        </div>
+        <button type="button" class="rd-pill" id="foods-filter-btn" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M7 12h10M10 17h4"></path></svg><span id="foods-filter-label">Sort</span>
+        </button>
       </div>
 
       <div class="active-filters" id="foods-active-filters" hidden></div>
 
-      <div class="entry-list" id="foods-list"></div>
-      <button type="button" class="link-btn" id="foods-list-toggle" style="margin-top:14px;" hidden></button>
+      <div class="food-card" id="foods-list"></div>
+      <button type="button" class="library-expander" id="foods-list-toggle" hidden></button>
 
-      <button type="button" class="link-btn" id="foods-ingredients-toggle" style="margin-top:18px;">Recipe ingredients (0) ▾</button>
-      <div class="entry-list" id="foods-ingredients-list" hidden></div>
+      <button type="button" class="library-expander muted" id="foods-ingredients-toggle">Recipe ingredients (0) <span aria-hidden="true">▾</span></button>
+      <div class="food-card" id="foods-ingredients-list" hidden></div>
+
+      <button type="button" class="rd-btn-secondary library-add-btn" data-add="foods">+ Add food</button>
     </div>
 
-    <div id="library-recipes-panel" hidden>
-      <div class="entry-list" id="recipes-list"></div>
+    <div id="library-recipes-panel" class="library-panel" hidden>
+      <div class="library-cards" id="recipes-list"></div>
+      <button type="button" class="rd-btn-secondary library-add-btn" data-add="recipes">+ Build a recipe</button>
     </div>
 
-    <div id="library-bundles-panel" hidden>
-      <div class="entry-list" id="bundles-list"></div>
+    <div id="library-bundles-panel" class="library-panel" hidden>
+      <div class="library-cards" id="bundles-list"></div>
+      <button type="button" class="rd-btn-secondary library-add-btn" data-add="bundles">+ New bundle</button>
     </div>
   </main>
 
