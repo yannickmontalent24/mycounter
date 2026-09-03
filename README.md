@@ -154,6 +154,9 @@ anything genuinely sensitive behind it.
 
 ## Fonts & icons
 
-IBM Plex Sans/Mono are self-hosted under `fonts/` (not loaded from Google Fonts at runtime)
-so the app doesn't depend on network access for its own typography when offline. App icons
-in `icons/` are generated PNGs (navy background, ring motif matching the hero-card rings).
+Hanken Grotesk (display + body + metadata) and Space Grotesk (figures only) are self-hosted
+under `fonts/` as single variable-weight woff2 files — fetched once from Google Fonts, not
+loaded at runtime — so the app doesn't depend on network access for its own typography when
+offline. App icons in `icons/` are generated PNGs (navy background, ring motif); replacing them
+with the bike mark from the redesign handoff is a pending task. The visual redesign spec lives
+in `docs/redesign-handoff/`.

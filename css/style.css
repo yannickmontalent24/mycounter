@@ -1,74 +1,91 @@
+/* Self-hosted variable faces (redesign). Hanken Grotesk carries display + body +
+   metadata; Space Grotesk is figures only — numbers, units, section labels.
+   Both are OFL, fetched once from Google Fonts and vendored so the app has no
+   runtime font dependency. See docs/redesign-handoff/README.md. */
 @font-face {
-  font-family: 'IBM Plex Sans';
+  font-family: 'Hanken Grotesk';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400 800;
   font-display: swap;
-  src: url('../fonts/ibm-plex-sans-400.woff2') format('woff2');
+  src: url('../fonts/hanken-grotesk.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'IBM Plex Sans';
+  font-family: 'Space Grotesk';
   font-style: normal;
-  font-weight: 500;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('../fonts/ibm-plex-sans-500.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Sans';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('../fonts/ibm-plex-sans-600.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('../fonts/ibm-plex-mono-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('../fonts/ibm-plex-mono-500.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('../fonts/ibm-plex-mono-600.woff2') format('woff2');
+  src: url('../fonts/space-grotesk.woff2') format('woff2');
 }
 
 :root {
-  --navy: #14213D;
-  --navy-hover: #22335A;
-  --navy-tint-bg: #EEF2FA;
-  --navy-tint-border: #CBD7EC;
-  --navy-tint-border-2: #D3DDEE;
-  --teal: #0E6A70;
-  --teal-tint-border: #BFDCD6;
-  --teal-badge-bg: #EAF4F2;
-  --red: #A4262C;
-  --red-diff: #8C3B3E;
-  --red-tint-bg: #FCF2F1;
-  --red-tint-border: #EBCFCD;
-  --amber: #8A5A0B;
-  --amber-tint-bg: #FBF1DE;
-  --amber-tint-border: #EBD9B4;
-  --violet: #5B3E86;
-  --surface: #FAFAF7;
-  --surface-raised: #FFFFFF;
-  --surface-sunken: #F2F1EC;
-  --hairline: #DEDDD6;
-  --control-border: #C9C8C0;
-  --text-secondary: #6B6B63;
-  --text-tab-inactive: #5A5A52;
-  --placeholder: #8A8A82;
+  /* ---- Colour ---- one accent (crimson) does accent + over-target + destructive,
+     so every state it marks is also paired with a glyph or label, never colour alone.
+     Navy is ink and structure, not a second accent. */
+  --accent: #A6182A;
+  --accent-press: #7C0F1F;
+  --accent-tint: #FBE9EB;
+  --accent-tint-border: #E9C4C9;
 
-  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-primary: #16203A;
+  --text-secondary: #5A6480;
+  --text-tertiary: #98A0B5;
+
+  --surface: #EEF0F5;      /* page ground — carries the grain */
+  --raised: #FFFFFF;       /* cards, list containers, tab bar */
+  --well: #E1E5EE;         /* sunken fields, steppers, inset placeholders */
+  --well-strong: #D5DAE6;  /* focused/active well */
+  --well-border: #A7B0C4;
+
+  --line: #C9CFDC;         /* 1.5px card borders */
+  --line-soft: #E1E5EE;    /* 1px hairlines between list rows */
+
+  --on-dark: #EEF0F5;      /* text/icons on a navy fill */
+  --on-dark-dim: #3A4360;  /* tracks and dividers on navy */
+
+  /* ---- Radius ---- two values: controls vs cards/sheets. Badges 6px. */
+  --radius-control: 10px;
+  --radius-card: 20px;
+  --radius-badge: 6px;
+
+  /* ---- Elevation ---- paper grain + inset wells. No shadows on cards, no gradients. */
+  --well-inset: inset 0 2px 4px rgba(22, 32, 58, 0.14);
+  --well-inset-strong: inset 0 2px 5px rgba(22, 32, 58, 0.20);
+
+  /* Faint desaturated turbulence, tiled 140x140, inlined so there's no network hit. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+
+  /* ---- Motion ---- */
+  --ease-sheet-in: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ---- Type ---- */
+  --font-sans: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-figure: 'Space Grotesk', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ---- Legacy aliases ---- retired screen by screen as each is converted to the
+     new tokens; delete this block once nothing references the old names. */
+  --navy: var(--text-primary);
+  --navy-hover: #22335A;
+  --navy-tint-bg: var(--well);
+  --navy-tint-border: var(--line);
+  --navy-tint-border-2: var(--line);
+  --teal: var(--accent);
+  --teal-tint-border: var(--accent-tint-border);
+  --teal-badge-bg: var(--accent-tint);
+  --red: var(--accent);
+  --red-diff: var(--accent);
+  --red-tint-bg: var(--accent-tint);
+  --red-tint-border: var(--accent-tint-border);
+  --amber: var(--accent);
+  --amber-tint-bg: var(--accent-tint);
+  --amber-tint-border: var(--accent-tint-border);
+  --violet: #5B3E86;
+  --surface-raised: var(--raised);
+  --surface-sunken: var(--well);
+  --hairline: var(--line-soft);
+  --control-border: var(--line);
+  --text-tab-inactive: var(--text-secondary);
+  --placeholder: var(--text-tertiary);
+  --font-mono: var(--font-figure);
 }
 
 * { box-sizing: border-box; }
@@ -77,7 +94,7 @@ html, body {
   margin: 0;
   padding: 0;
   background: var(--surface);
-  color: var(--navy);
+  color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   height: 100%;
@@ -88,6 +105,15 @@ html, body {
 
 body {
   overscroll-behavior-y: none;
+  /* The grain sits on the page ground; cards (--raised) paint over it. */
+  background-image: var(--grain);
+  background-repeat: repeat;
+}
+
+/* Figures — numbers, units next to numbers, section labels. Never prose. */
+.u-figure {
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
 }
 
 input, button, textarea {
@@ -1205,7 +1231,7 @@ body.modal-open { overflow: hidden; }
 
 /* Focus */
 :focus-visible {
-  outline: 2px solid var(--navy);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
