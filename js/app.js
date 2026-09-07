@@ -515,7 +515,7 @@ function renderSheetResults() {
       .slice(0, 6);
     label.textContent = 'Results';
   } else {
-    results = favouriteItems();
+    results = favouriteItems(3);
     label.textContent = results.length ? 'Favourites — most logged' : 'Start typing to find a food';
   }
 
