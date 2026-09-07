@@ -171,7 +171,7 @@ function recipesById() { return new Map(cache.recipes.map(r => [r.id, r])); }
 function bundlesById() { return new Map(cache.bundles.map(b => [b.id, b])); }
 
 // ---- Routing ----
-const SCREENS = ['today', 'log', 'foods', 'workouts', 'history', 'weight', 'settings'];
+const SCREENS = ['today', 'log', 'foods', 'workouts', 'history', 'weight', 'settings', 'admin'];
 
 function currentScreenFromHash() {
   const h = location.hash.replace('#', '');
@@ -196,9 +196,10 @@ function renderRoute() {
   for (const s of SCREENS) {
     document.getElementById(`screen-${s}`).hidden = s !== screen;
   }
-  // History and the body-weight log have no tab of their own — they sit under Settings, so
-  // Settings stays lit while they're open rather than leaving no tab highlighted at all.
-  const tabForScreen = (screen === 'history' || screen === 'weight') ? 'settings' : screen;
+  // History, the body-weight log, and the desktop library admin have no tab of their own —
+  // they sit under Settings, so Settings stays lit while they're open rather than leaving no
+  // tab highlighted at all.
+  const tabForScreen = (screen === 'history' || screen === 'weight' || screen === 'admin') ? 'settings' : screen;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     const active = btn.dataset.go === tabForScreen;
     btn.classList.toggle('active', active);
@@ -207,6 +208,7 @@ function renderRoute() {
   const renderers = {
     today: renderToday, log: renderLog, foods: renderLibrary,
     workouts: renderWorkouts, history: renderHistory, weight: renderWeight, settings: renderSettings,
+    admin: renderAdmin,
   };
   renderers[screen]();
 }
@@ -1678,7 +1680,7 @@ function renderRecipes() {
   });
 }
 
-async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {}) {
+async function openRecipeModal(recipe, { copyFrom = null, restore = null, onSaved = null } = {}) {
   const isEdit = !!recipe;
   const template = recipe ?? copyFrom;
   const ingredients = restore
@@ -1905,10 +1907,156 @@ async function openRecipeModal(recipe, { copyFrom = null, restore = null } = {})
     await db.put('recipes', obj);
     await refreshCache();
     closeModal();
-    renderRecipes();
+    if (onSaved) onSaved(obj); else renderRecipes();
     if (isDraftRecipe(obj)) toast('Saved as draft — add the cooked weight when you weigh it');
   });
 }
+
+// ==================== LIBRARY ADMIN (desktop) ====================
+// A desktop-shaped table view over the same shared foods/recipes library the mobile Library
+// screen edits via bottom sheets — reached from Settings, not the tab bar (same precedent as
+// History/Weight). It reuses openFoodModal/openRecipeModal for editing rather than building a
+// second form; this file only adds the browsing/table layer.
+let adminMode = 'foods';
+let adminFoodsQuery = '';
+let adminFoodsSortKey = 'name';
+let adminFoodsSortDir = 'asc';
+
+function renderAdmin() {
+  document.querySelectorAll('#admin-mode-chips .rd-chip').forEach(c => c.classList.toggle('active', c.dataset.mode === adminMode));
+  document.getElementById('admin-foods-panel').hidden = adminMode !== 'foods';
+  document.getElementById('admin-recipes-panel').hidden = adminMode !== 'recipes';
+  if (adminMode === 'foods') renderAdminFoods(); else renderAdminRecipes();
+}
+
+function sortAdminFoods(foods, key, dir) {
+  const factor = dir === 'desc' ? -1 : 1;
+  const val = f => (key === 'name' ? f.name.toLowerCase() : (f.per100g[key] ?? -Infinity));
+  return foods.slice().sort((a, b) => (key === 'name'
+    ? factor * val(a).localeCompare(val(b))
+    : factor * (val(a) - val(b))));
+}
+
+function renderAdminFoods() {
+  const q = adminFoodsQuery.trim().toLowerCase();
+  const filtered = q ? cache.foods.filter(f => f.name.toLowerCase().includes(q)) : cache.foods;
+  const rows = sortAdminFoods(filtered, adminFoodsSortKey, adminFoodsSortDir);
+
+  document.querySelectorAll('#admin-foods-table .admin-th-sort').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.sort === adminFoodsSortKey);
+    btn.dataset.dir = btn.dataset.sort === adminFoodsSortKey ? adminFoodsSortDir : '';
+  });
+
+  const per = v => (v == null ? '—' : v);
+  const tbody = document.getElementById('admin-foods-tbody');
+  tbody.innerHTML = '';
+  if (rows.length === 0) {
+    tbody.appendChild(el(`<tr><td colspan="7" class="empty-state">No foods match.</td></tr>`));
+    return;
+  }
+  for (const f of rows) {
+    const tr = el(`
+      <tr>
+        <td>${escapeHtml(f.name)}</td>
+        <td>${f.per100g.kcal}</td>
+        <td>${f.per100g.protein} g</td>
+        <td>${per(f.per100g.carbs)}${f.per100g.carbs != null ? ' g' : ''}</td>
+        <td>${per(f.per100g.fat)}${f.per100g.fat != null ? ' g' : ''}</td>
+        <td>${sourceBadge(f.source)}</td>
+        <td class="admin-row-actions">
+          <button type="button" class="rd-icon-btn" aria-label="Edit ${escapeHtml(f.name)}">✎</button>
+          <button type="button" class="rd-icon-btn is-danger" aria-label="Delete ${escapeHtml(f.name)}">×</button>
+        </td>
+      </tr>
+    `);
+    tr.querySelector('[aria-label^="Edit"]').addEventListener('click', () => openFoodModal(f, { onSaved: () => renderAdminFoods() }));
+    tr.querySelector('[aria-label^="Delete"]').addEventListener('click', async () => {
+      const usedInRecipe = cache.recipes.some(r => (r.ingredients || []).some(i => i.foodId === f.id));
+      const logged = frequencyOf('food', f.id);
+      const extra = usedInRecipe || logged ? ` It's ${[usedInRecipe && 'used in a recipe', logged && `logged ${logged}×`].filter(Boolean).join(' and ')}.` : '';
+      if (!confirm(`Delete "${f.name}"?${extra} This can't be undone.`)) return;
+      await db.remove('foods', f.id);
+      await refreshCache();
+      renderAdminFoods();
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+function renderAdminRecipes() {
+  const fMap = foodsById();
+  const tbody = document.getElementById('admin-recipes-tbody');
+  tbody.innerHTML = '';
+  if (cache.recipes.length === 0) {
+    tbody.appendChild(el(`<tr><td colspan="7" class="empty-state">No recipes yet.</td></tr>`));
+    return;
+  }
+  for (const r of cache.recipes) {
+    const draft = isDraftRecipe(r);
+    let perGram = null;
+    let broken = false;
+    if (!draft) {
+      try { perGram = recipePerGram(r, fMap); } catch { broken = true; }
+    }
+
+    if (broken) {
+      const tr = el(`
+        <tr>
+          <td colspan="6">⚠ ${escapeHtml(r.name)} — missing ingredient</td>
+          <td class="admin-row-actions"><button type="button" class="rd-link" data-fix>Fix</button></td>
+        </tr>
+      `);
+      tr.querySelector('[data-fix]').addEventListener('click', () => openRecipeModal(r, { onSaved: () => renderAdminRecipes() }));
+      tbody.appendChild(tr);
+      continue;
+    }
+
+    const portionKcal = perGram ? Math.round(perGram.kcal * (r.cookedWeightG / r.portions)) : null;
+    const portionProt = perGram ? Math.round(perGram.protein * (r.cookedWeightG / r.portions)) : null;
+    const tr = el(`
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${(r.ingredients || []).length}</td>
+        <td>${draft ? '—' : `${fmt(r.cookedWeightG)} g`}</td>
+        <td>${r.portions}</td>
+        <td>${draft ? '—' : fmt(portionKcal)}</td>
+        <td>${draft ? '—' : `${portionProt} g`}</td>
+        <td class="admin-row-actions">
+          <span class="badge ${draft ? 'badge-draft' : 'badge-recipe'}">${draft ? badgeIcon('draft') + ' draft' : badgeIcon('recipe') + ' recipe'}</span>
+          <button type="button" class="rd-icon-btn" aria-label="Edit ${escapeHtml(r.name)}">✎</button>
+          <button type="button" class="rd-icon-btn is-danger" aria-label="Delete ${escapeHtml(r.name)}">×</button>
+        </td>
+      </tr>
+    `);
+    tr.querySelector('[aria-label^="Edit"]').addEventListener('click', () => openRecipeModal(r, { onSaved: () => renderAdminRecipes() }));
+    tr.querySelector('[aria-label^="Delete"]').addEventListener('click', async () => {
+      if (!confirm(`Delete "${r.name}"? This can't be undone.`)) return;
+      await db.remove('recipes', r.id);
+      await refreshCache();
+      renderAdminRecipes();
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById('admin-mode-chips').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-mode]');
+  if (!btn) return;
+  adminMode = btn.dataset.mode;
+  renderAdmin();
+});
+document.getElementById('admin-foods-search').addEventListener('input', e => { adminFoodsQuery = e.target.value; renderAdminFoods(); });
+document.getElementById('admin-add-food-btn').addEventListener('click', () => openFoodModal(null, { onSaved: () => renderAdminFoods() }));
+document.getElementById('admin-add-recipe-btn').addEventListener('click', () => openRecipeModal(null, { onSaved: () => renderAdminRecipes() }));
+document.getElementById('admin-foods-table').querySelector('thead').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-sort]');
+  if (!btn) return;
+  if (adminFoodsSortKey === btn.dataset.sort) adminFoodsSortDir = adminFoodsSortDir === 'asc' ? 'desc' : 'asc';
+  else { adminFoodsSortKey = btn.dataset.sort; adminFoodsSortDir = 'asc'; }
+  renderAdminFoods();
+});
+document.getElementById('open-admin-btn').addEventListener('click', () => goTo('admin'));
+document.getElementById('admin-back').addEventListener('click', () => goTo('settings'));
 
 // ==================== BUNDLES ====================
 // A bundle groups foods/recipes you always log together (a usual breakfast) so the whole group

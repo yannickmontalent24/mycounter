@@ -282,6 +282,7 @@
             <span class="settings-row-r"><span class="settings-row-val" id="settings-weight-avg">—</span><span class="chev" aria-hidden="true">›</span></span>
           </button>
           <button type="button" class="settings-row" id="open-history-btn"><span>View history</span><span class="chev" aria-hidden="true">›</span></button>
+          <button type="button" class="settings-row" id="open-admin-btn"><span>Library admin</span><span class="chev" aria-hidden="true">›</span></button>
           <button type="button" class="settings-row" id="export-all-btn"><span>Export JSON</span><span class="chev" aria-hidden="true">›</span></button>
           <div class="settings-row settings-account">
             <span class="settings-account-l">
@@ -292,6 +293,64 @@
           </div>
         </div>
       </section>
+    </div>
+  </main>
+
+  <main id="screen-admin" class="screen rd-screen" data-screen="admin" hidden>
+    <div class="subscreen-head">
+      <button type="button" class="rd-icon-btn" id="admin-back" aria-label="Back to settings">‹</button>
+      <h1 class="rd-title">Library admin</h1>
+    </div>
+
+    <div class="admin-panel-wrap">
+      <div class="rd-chip-row" id="admin-mode-chips">
+        <button type="button" class="rd-chip active" data-mode="foods">Foods</button>
+        <button type="button" class="rd-chip" data-mode="recipes">Recipes</button>
+      </div>
+
+      <div id="admin-foods-panel" class="admin-panel">
+        <div class="admin-toolbar">
+          <div class="rd-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg>
+            <input id="admin-foods-search" type="text" placeholder="Search foods…" autocomplete="off" aria-label="Search foods">
+          </div>
+          <button type="button" class="rd-btn-secondary" id="admin-add-food-btn">+ Add food</button>
+        </div>
+        <table class="admin-table" id="admin-foods-table">
+          <thead>
+            <tr>
+              <th><button type="button" class="admin-th-sort" data-sort="name">Name</button></th>
+              <th><button type="button" class="admin-th-sort" data-sort="kcal">kcal /100</button></th>
+              <th><button type="button" class="admin-th-sort" data-sort="protein">Protein /100</button></th>
+              <th><button type="button" class="admin-th-sort" data-sort="carbs">Carbs /100</button></th>
+              <th><button type="button" class="admin-th-sort" data-sort="fat">Fat /100</button></th>
+              <th>Source</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="admin-foods-tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="admin-recipes-panel" class="admin-panel" hidden>
+        <div class="admin-toolbar">
+          <button type="button" class="rd-btn-secondary" id="admin-add-recipe-btn">+ Build a recipe</button>
+        </div>
+        <table class="admin-table" id="admin-recipes-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Ingredients</th>
+              <th>Cooked weight</th>
+              <th>Portions</th>
+              <th>kcal /portion</th>
+              <th>Protein /portion</th>
+              <th>Status / actions</th>
+            </tr>
+          </thead>
+          <tbody id="admin-recipes-tbody"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 
