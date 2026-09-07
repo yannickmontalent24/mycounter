@@ -16,6 +16,16 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // Strava daily calorie rollups, written only by the stravaWebhook Cloud Function (Admin
+    // SDK, which bypasses these rules entirely). This is a flat top-level collection, not
+    // nested under strava/ — doc paths must alternate collection/document, so strava/daily/
+    // {date} would be an invalid (odd-segment) reference. strava/tokens stays denied by
+    // default (not matched by any rule) — only this one read is opened up for the app.
+    match /stravaDaily/{date} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Anything not matched above is denied by default.
   }
 }

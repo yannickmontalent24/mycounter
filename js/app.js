@@ -16,6 +16,7 @@ import { login, logout, onUserChanged, accountLabel, friendlyAuthError } from '.
 import { findLegacyData, uploadShared, uploadAccount, alreadyMigrated, markMigrated } from './migrate.js';
 import { PHASES, activePhase, weekNumberFor, defaultDayIndex } from './workouts.js';
 import { initPullToRefresh } from './pull-refresh.js';
+import { getStravaDaily } from './strava.js';
 
 // Safari (and standalone iOS webviews) still dispatch these non-standard gesture events for
 // pinch even when touch-action forbids zooming, so they need their own preventDefault.
@@ -248,6 +249,17 @@ async function renderToday({ scrollToMeal = null } = {}) {
   const kcalTotal = resolved.reduce((a, e) => a + e.kcal, 0);
   const protTotal = resolved.reduce((a, e) => a + e.protein, 0);
   const target = resolveTarget(cache.dayTargets, cache.overrides, dateStr, weekdayOf(dateStr));
+
+  // Exercise calories earned back, from whatever Strava has synced for today so far (see
+  // js/strava.js) — fetched fresh each render since a webhook can land at any time with no
+  // signal to the app, unlike the rest of the cache primed once at boot.
+  const strava = await getStravaDaily(dateStr);
+  const stravaKcal = strava?.kcal ?? 0;
+  if (target.kcal != null && stravaKcal > 0) target.kcal += stravaKcal;
+
+  const stravaChip = document.getElementById('today-strava-chip');
+  stravaChip.hidden = stravaKcal <= 0;
+  if (stravaKcal > 0) document.getElementById('today-strava-n').textContent = `+${stravaKcal}`;
 
   applyHero('kcal', kcalTotal, target.kcal);
   applyHero('protein', protTotal, target.protein);
